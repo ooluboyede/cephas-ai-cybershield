@@ -89,6 +89,10 @@ def save_model(model, features: pd.DataFrame, directory: str | Path):
     ):
         raise ValueError("model artifact data does not match the model tenant scope")
     validate_feature_frame(features)
+    dataset_sha256 = fingerprint(features)
+    trained_dataset_sha256 = getattr(model, "cephas_dataset_sha256_", None)
+    if not trained_dataset_sha256 or dataset_sha256 != trained_dataset_sha256:
+        raise ValueError("artifact dataset does not match the model training dataset")
     path = Path(directory)
     path.mkdir(parents=True, exist_ok=True)
     artifact_path = path / "isolation_forest.joblib"
@@ -103,7 +107,7 @@ def save_model(model, features: pd.DataFrame, directory: str | Path):
         "training_scope": "single_tenant",
         "features": FEATURE_COLUMNS,
         "training_rows": len(features),
-        "dataset_sha256": fingerprint(features),
+        "dataset_sha256": dataset_sha256,
         "artifact_sha256": artifact_sha256,
         "parameters": model.get_params(),
         "warning": "Anomaly is not proof of malicious activity; analyst review required.",
