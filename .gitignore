@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+*.py[cod]
+artifacts/
+.env
+*.pem
+*.key
+*.p12
+*.pfx
+customer-data/
+telemetry/
