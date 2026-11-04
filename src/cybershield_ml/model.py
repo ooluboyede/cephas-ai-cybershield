@@ -10,6 +10,7 @@ from sklearn.ensemble import IsolationForest
 
 from . import FEATURE_SCHEMA_VERSION, MODEL_METADATA_SCHEMA_VERSION, __version__
 from .features import FEATURE_COLUMNS
+from .signing import verify_model_signature
 
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _REQUIRED_METADATA_FIELDS = {
@@ -160,17 +161,22 @@ def _read_and_validate_metadata(metadata_path: Path, tenant_id: str) -> dict:
     return metadata
 
 
-def load_model(directory: str | Path, tenant_id: str) -> IsolationForest:
+def load_model(
+    directory: str | Path,
+    tenant_id: str,
+    trusted_public_keys: dict[str, bytes | str],
+) -> IsolationForest:
     """Load a locally controlled model only after metadata and artifact checks pass.
 
     Joblib uses Python serialization. Never load artifacts supplied by an untrusted party.
     The SHA-256 comparison detects artifact/metadata mismatch; it is not a digital signature
-    and does not establish publisher authenticity.
+    and does not establish publisher authenticity. A trusted Ed25519 signature is mandatory.
     """
     if not tenant_id or not tenant_id.strip():
         raise ValueError("tenant_id is required to load a tenant-scoped model")
     path = Path(directory)
     metadata = _read_and_validate_metadata(path / "model_metadata.json", tenant_id)
+    verify_model_signature(path, metadata, trusted_public_keys)
     artifact_path = path / "isolation_forest.joblib"
     if artifact_path.is_symlink() or not artifact_path.is_file():
         raise ValueError("model artifact must be a regular, non-symlink file")
