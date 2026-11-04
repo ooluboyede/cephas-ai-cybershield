@@ -4,9 +4,9 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "cephas-cybershield-ml"
-version = "0.3.1"
+version = "0.3.3"
 requires-python = ">=3.10"
-dependencies = ["pydantic>=2.6,<3", "pandas>=2.1,<3", "numpy>=1.26,<3", "scikit-learn>=1.4,<2", "joblib>=1.3,<2"]
+dependencies = ["pydantic>=2.6,<3", "pandas>=2.1,<3", "numpy>=1.26,<3", "scikit-learn>=1.4,<2", "joblib>=1.3,<2", "cryptography>=42,<47"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8,<9", "ruff>=0.4,<1"]
