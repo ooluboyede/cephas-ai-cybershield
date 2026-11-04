@@ -9,8 +9,10 @@ from sklearn.ensemble import IsolationForest
 from . import FEATURE_SCHEMA_VERSION, __version__
 from .features import FEATURE_COLUMNS
 
+
 def fingerprint(features: pd.DataFrame) -> str:
     return hashlib.sha256(features[FEATURE_COLUMNS].to_csv(index=False).encode()).hexdigest()
+
 
 def train_model(features: pd.DataFrame, contamination: float = 0.02, seed: int = 42):
     if features.empty:
@@ -25,6 +27,7 @@ def train_model(features: pd.DataFrame, contamination: float = 0.02, seed: int =
     model.fit(features[FEATURE_COLUMNS])
     return model
 
+
 def score(model, features: pd.DataFrame) -> pd.DataFrame:
     result = features.copy()
     if result.empty:
@@ -34,6 +37,7 @@ def score(model, features: pd.DataFrame) -> pd.DataFrame:
     result["anomaly_score"] = model.decision_function(features[FEATURE_COLUMNS])
     result["anomaly_flag"] = (model.predict(features[FEATURE_COLUMNS]) == -1).astype(int)
     return result
+
 
 def save_model(model, features: pd.DataFrame, directory: str | Path):
     path = Path(directory)
