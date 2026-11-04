@@ -8,7 +8,7 @@ import pytest
 from cybershield_ml.evaluation import evaluate
 from cybershield_ml.events import SecurityEvent
 from cybershield_ml.features import FEATURE_COLUMNS, deduplicate_events, engineer_features
-from cybershield_ml.model import fingerprint, save_model, score, train_model
+from cybershield_ml.model import fingerprint, load_model, save_model, score, train_model
 
 
 def ev(i, kind, tenant="t1", **kwargs):
