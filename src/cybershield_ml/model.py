@@ -131,7 +131,7 @@ def _read_and_validate_metadata(metadata_path: Path, tenant_id: str) -> dict:
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise ValueError("model metadata is unreadable or invalid JSON") from exc
     if not isinstance(metadata, dict):
-        raise ValueError("model metadata must be a JSON object")
+        raise ValueError("model metadata must be a JSON object")  # noqa: TRY004
     missing = _REQUIRED_METADATA_FIELDS - metadata.keys()
     if missing:
         raise ValueError(f"model metadata is missing fields: {sorted(missing)}")
@@ -156,7 +156,7 @@ def _read_and_validate_metadata(metadata_path: Path, tenant_id: str) -> dict:
         if not isinstance(metadata[field], str) or not _SHA256_RE.fullmatch(metadata[field]):
             raise ValueError(f"model metadata field {field} is not a valid SHA-256 digest")
     if not isinstance(metadata["parameters"], dict) or not isinstance(metadata["warning"], str):
-        raise ValueError("model metadata parameters or warning field is invalid")
+        raise ValueError("model metadata parameters or warning field is invalid")  # noqa: TRY004
     return metadata
 
 
@@ -183,7 +183,7 @@ def load_model(directory: str | Path, tenant_id: str) -> IsolationForest:
     except Exception as exc:
         raise ValueError("model artifact could not be deserialized") from exc
     if not isinstance(model, IsolationForest):
-        raise ValueError("model artifact does not contain a supported IsolationForest model")
+        raise ValueError("model artifact does not contain a supported IsolationForest model")  # noqa: TRY004
     if getattr(model, "cephas_tenant_id_", None) != tenant_id:
         raise ValueError("loaded model tenant scope does not match the requested tenant")
     if getattr(model, "cephas_dataset_sha256_", None) != metadata["dataset_sha256"]:
