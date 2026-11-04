@@ -1,9 +1,12 @@
-import hashlib, json
+import hashlib
+import json
 from pathlib import Path
+
 import joblib
 import pandas as pd
 from sklearn.ensemble import IsolationForest
-from . import __version__, FEATURE_SCHEMA_VERSION
+
+from . import FEATURE_SCHEMA_VERSION, __version__
 from .features import FEATURE_COLUMNS
 
 def fingerprint(features: pd.DataFrame) -> str:
