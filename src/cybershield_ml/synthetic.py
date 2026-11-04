@@ -1,5 +1,6 @@
-from datetime import datetime, timedelta, timezone
 import random
+from datetime import datetime, timedelta, timezone
+
 from .events import SecurityEvent
 
 def synthetic_events(seed=7, entities=30, windows=24):
