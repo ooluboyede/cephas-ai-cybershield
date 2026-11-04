@@ -171,3 +171,95 @@ def test_fingerprint_is_stable():
 def test_evaluation():
     result = evaluate([0, 0, 1, 1], [0, 1, 1, 1])
     assert result["confusion_matrix_0_1"] == [[1, 1], [0, 2]]
+
+
+def test_model_load_round_trip_and_tenant_scope(tmp_path):
+    frame = sample_features()
+    trained = train_model(frame, tenant_id="t1", contamination=0.15)
+    save_model(trained, frame, tmp_path)
+    loaded = load_model(tmp_path, tenant_id="t1")
+    assert loaded.cephas_tenant_id_ == "t1"
+    assert loaded.cephas_dataset_sha256_ == trained.cephas_dataset_sha256_
+    assert len(score(loaded, frame)) == len(frame)
+    with pytest.raises(ValueError, match="requested tenant scope"):
+        load_model(tmp_path, tenant_id="t2")
+
+
+def test_loader_rejects_artifact_tampering_before_deserialization(tmp_path, monkeypatch):
+    import cybershield_ml.model as model_module
+
+    frame = sample_features()
+    save_model(train_model(frame, tenant_id="t1", contamination=0.15), frame, tmp_path)
+    artifact = tmp_path / "isolation_forest.joblib"
+    artifact.write_bytes(artifact.read_bytes() + b"tampered")
+
+    def unexpected_load(_path):
+        pytest.fail("joblib.load must not run before artifact hash verification")
+
+    monkeypatch.setattr(model_module.joblib, "load", unexpected_load)
+    with pytest.raises(ValueError, match="SHA-256 verification failed"):
+        load_model(tmp_path, tenant_id="t1")
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("version", "99.0.0", "model version is incompatible"),
+        ("metadata_schema_version", "99.0.0", "metadata schema version is incompatible"),
+        ("feature_schema_version", "99.0.0", "feature schema version is incompatible"),
+        ("algorithm", "UnknownModel", "algorithm is not supported"),
+        ("features", ["unexpected_feature"], "feature list is incompatible"),
+        ("tenant_id", "t2", "requested tenant scope"),
+        ("artifact_sha256", "not-a-digest", "not a valid SHA-256 digest"),
+    ],
+)
+def test_loader_rejects_incompatible_metadata(tmp_path, field, value, message):
+    frame = sample_features()
+    save_model(train_model(frame, tenant_id="t1", contamination=0.15), frame, tmp_path)
+    metadata_path = tmp_path / "model_metadata.json"
+    metadata = json.loads(metadata_path.read_text())
+    metadata[field] = value
+    metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+    with pytest.raises(ValueError, match=message):
+        load_model(tmp_path, tenant_id="t1")
+
+
+def test_loader_rejects_malformed_metadata(tmp_path):
+    (tmp_path / "model_metadata.json").write_text("{broken", encoding="utf-8")
+    with pytest.raises(ValueError, match="invalid JSON"):
+        load_model(tmp_path, tenant_id="t1")
+
+
+def test_loader_rejects_metadata_missing_required_fields(tmp_path):
+    (tmp_path / "model_metadata.json").write_text(json.dumps({"product": "CEPHAS"}))
+    with pytest.raises(ValueError, match="missing fields"):
+        load_model(tmp_path, tenant_id="t1")
+
+
+def test_loader_rejects_model_payload_with_wrong_tenant(tmp_path):
+    import joblib
+
+    frame = sample_features()
+    model = train_model(frame, tenant_id="t1", contamination=0.15)
+    save_model(model, frame, tmp_path)
+    model.cephas_tenant_id_ = "t2"
+    artifact = tmp_path / "isolation_forest.joblib"
+    joblib.dump(model, artifact)
+    metadata_path = tmp_path / "model_metadata.json"
+    metadata = json.loads(metadata_path.read_text())
+    metadata["artifact_sha256"] = hashlib.sha256(artifact.read_bytes()).hexdigest()
+    metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+    with pytest.raises(ValueError, match="loaded model tenant scope"):
+        load_model(tmp_path, tenant_id="t1")
+
+
+def test_loader_rejects_symlinked_artifact(tmp_path):
+    frame = sample_features()
+    model = train_model(frame, tenant_id="t1", contamination=0.15)
+    save_model(model, frame, tmp_path)
+    artifact = tmp_path / "isolation_forest.joblib"
+    target = tmp_path / "real-model.joblib"
+    artifact.rename(target)
+    artifact.symlink_to(target)
+    with pytest.raises(ValueError, match="regular, non-symlink"):
+        load_model(tmp_path, tenant_id="t1")
