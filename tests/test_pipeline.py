@@ -8,10 +8,12 @@ from cybershield_ml.events import SecurityEvent
 from cybershield_ml.features import FEATURE_COLUMNS, engineer_features
 from cybershield_ml.model import save_model, score, train_model
 
+
 def ev(i, kind, **kwargs):
     return SecurityEvent(event_id=str(i), tenant_id="t1", entity_id="u1",
         timestamp=datetime(2026, 1, 1, 10, 1, tzinfo=timezone.utc),
         event_type=kind, **kwargs)
+
 
 def test_features_aggregate():
     rows = [ev(1, "auth_failure", source_ip="192.0.2.1"),
@@ -26,13 +28,16 @@ def test_features_aggregate():
     assert result.iloc[0].privilege_events_5m == 1
     assert all(c in result for c in FEATURE_COLUMNS)
 
+
 def test_empty_input_schema():
     assert engineer_features([]).empty
+
 
 def test_naive_timestamp_rejected():
     with pytest.raises(ValueError):
         SecurityEvent(event_id="x", tenant_id="t", entity_id="u",
             timestamp=datetime(2026, 1, 1), event_type="auth_success")
+
 
 def test_model_train_score_save(tmp_path):
     data = {c: [1., 2., 1., 3., 100., 2.] for c in FEATURE_COLUMNS}
@@ -44,9 +49,11 @@ def test_model_train_score_save(tmp_path):
     assert (tmp_path / "model_metadata.json").exists()
     assert (tmp_path / "isolation_forest.joblib").exists()
 
+
 def test_invalid_training_rejected():
     with pytest.raises(ValueError):
         train_model(pd.DataFrame())
+
 
 def test_evaluation():
     result = evaluate([0, 0, 1, 1], [0, 1, 1, 1])
