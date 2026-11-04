@@ -2,11 +2,10 @@ import hashlib
 import json
 from datetime import datetime, timezone
 
-from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-
 import pandas as pd
 import pytest
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from cybershield_ml.evaluation import evaluate
 from cybershield_ml.events import SecurityEvent
