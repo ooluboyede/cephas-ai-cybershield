@@ -1,5 +1,6 @@
 import hashlib
 import json
+import re
 from pathlib import Path
 
 import joblib
@@ -7,8 +8,15 @@ import numpy as np
 import pandas as pd
 from sklearn.ensemble import IsolationForest
 
-from . import FEATURE_SCHEMA_VERSION, __version__
+from . import FEATURE_SCHEMA_VERSION, MODEL_METADATA_SCHEMA_VERSION, __version__
 from .features import FEATURE_COLUMNS
+
+_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+_REQUIRED_METADATA_FIELDS = {
+    "product", "version", "metadata_schema_version", "feature_schema_version",
+    "algorithm", "tenant_id", "training_scope", "features", "training_rows",
+    "dataset_sha256", "artifact_sha256", "parameters", "warning",
+}
 
 
 def validate_feature_frame(features: pd.DataFrame) -> None:
@@ -50,10 +58,7 @@ def train_model(
         raise ValueError("at least two tenant-scoped feature rows are required")
     validate_feature_frame(tenant_features)
     model = IsolationForest(
-        n_estimators=200,
-        contamination=contamination,
-        random_state=seed,
-        n_jobs=-1,
+        n_estimators=200, contamination=contamination, random_state=seed, n_jobs=-1
     )
     model.fit(tenant_features[FEATURE_COLUMNS])
     model.cephas_tenant_id_ = tenant_id
@@ -101,6 +106,7 @@ def save_model(model, features: pd.DataFrame, directory: str | Path):
     metadata = {
         "product": "CEPHAS AI CyberShield",
         "version": __version__,
+        "metadata_schema_version": MODEL_METADATA_SCHEMA_VERSION,
         "feature_schema_version": FEATURE_SCHEMA_VERSION,
         "algorithm": "IsolationForest",
         "tenant_id": tenant_id,
@@ -115,3 +121,73 @@ def save_model(model, features: pd.DataFrame, directory: str | Path):
     metadata_path = path / "model_metadata.json"
     metadata_path.write_text(json.dumps(metadata, indent=2, default=str), encoding="utf-8")
     return metadata
+
+
+def _read_and_validate_metadata(metadata_path: Path, tenant_id: str) -> dict:
+    if metadata_path.is_symlink() or not metadata_path.is_file():
+        raise ValueError("model metadata must be a regular, non-symlink file")
+    try:
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError("model metadata is unreadable or invalid JSON") from exc
+    if not isinstance(metadata, dict):
+        raise ValueError("model metadata must be a JSON object")
+    missing = _REQUIRED_METADATA_FIELDS - metadata.keys()
+    if missing:
+        raise ValueError(f"model metadata is missing fields: {sorted(missing)}")
+    if metadata["product"] != "CEPHAS AI CyberShield":
+        raise ValueError("model metadata product is not recognised")
+    if metadata["version"] != __version__:
+        raise ValueError("model version is incompatible with this CyberShield release")
+    if metadata["metadata_schema_version"] != MODEL_METADATA_SCHEMA_VERSION:
+        raise ValueError("model metadata schema version is incompatible")
+    if metadata["feature_schema_version"] != FEATURE_SCHEMA_VERSION:
+        raise ValueError("model feature schema version is incompatible")
+    if metadata["algorithm"] != "IsolationForest":
+        raise ValueError("model algorithm is not supported")
+    if metadata["tenant_id"] != tenant_id or metadata["training_scope"] != "single_tenant":
+        raise ValueError("model metadata does not match the requested tenant scope")
+    if metadata["features"] != FEATURE_COLUMNS:
+        raise ValueError("model feature list is incompatible with this release")
+    rows = metadata["training_rows"]
+    if isinstance(rows, bool) or not isinstance(rows, int) or rows < 2:
+        raise ValueError("model training row count is invalid")
+    for field in ("dataset_sha256", "artifact_sha256"):
+        if not isinstance(metadata[field], str) or not _SHA256_RE.fullmatch(metadata[field]):
+            raise ValueError(f"model metadata field {field} is not a valid SHA-256 digest")
+    if not isinstance(metadata["parameters"], dict) or not isinstance(metadata["warning"], str):
+        raise ValueError("model metadata parameters or warning field is invalid")
+    return metadata
+
+
+def load_model(directory: str | Path, tenant_id: str) -> IsolationForest:
+    """Load a locally controlled model only after metadata and artifact checks pass.
+
+    Joblib uses Python serialization. Never load artifacts supplied by an untrusted party.
+    The SHA-256 comparison detects artifact/metadata mismatch; it is not a digital signature
+    and does not establish publisher authenticity.
+    """
+    if not tenant_id or not tenant_id.strip():
+        raise ValueError("tenant_id is required to load a tenant-scoped model")
+    path = Path(directory)
+    metadata = _read_and_validate_metadata(path / "model_metadata.json", tenant_id)
+    artifact_path = path / "isolation_forest.joblib"
+    if artifact_path.is_symlink() or not artifact_path.is_file():
+        raise ValueError("model artifact must be a regular, non-symlink file")
+    actual_sha256 = hashlib.sha256(artifact_path.read_bytes()).hexdigest()
+    if actual_sha256 != metadata["artifact_sha256"]:
+        raise ValueError("model artifact SHA-256 verification failed")
+    # Deserialization occurs only after the artifact hash has been checked.
+    try:
+        model = joblib.load(artifact_path)
+    except Exception as exc:
+        raise ValueError("model artifact could not be deserialized") from exc
+    if not isinstance(model, IsolationForest):
+        raise ValueError("model artifact does not contain a supported IsolationForest model")
+    if getattr(model, "cephas_tenant_id_", None) != tenant_id:
+        raise ValueError("loaded model tenant scope does not match the requested tenant")
+    if getattr(model, "cephas_dataset_sha256_", None) != metadata["dataset_sha256"]:
+        raise ValueError("loaded model training fingerprint does not match its metadata")
+    if getattr(model, "n_features_in_", None) != len(FEATURE_COLUMNS):
+        raise ValueError("loaded model feature count is incompatible")
+    return model
