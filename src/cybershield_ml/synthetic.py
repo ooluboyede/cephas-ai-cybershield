@@ -3,6 +3,7 @@ from datetime import datetime, timedelta, timezone
 
 from .events import SecurityEvent
 
+
 def synthetic_events(seed=7, entities=30, windows=24):
     rng = random.Random(seed)
     start = datetime(2026, 1, 1, 8, tzinfo=timezone.utc)
