@@ -3,8 +3,8 @@ import base64
 import hashlib
 import json
 import re
-from pathlib import Path
 from collections.abc import Mapping
+from pathlib import Path
 
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import serialization
