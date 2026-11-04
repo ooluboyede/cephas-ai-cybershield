@@ -1,5 +1,6 @@
 from sklearn.metrics import classification_report, confusion_matrix
 
+
 def evaluate(y_true: list[int], y_pred: list[int]) -> dict:
     if not y_true or len(y_true) != len(y_pred):
         raise ValueError("labels must have equal non-zero lengths")
