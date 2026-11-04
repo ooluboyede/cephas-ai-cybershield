@@ -1,7 +1,8 @@
 from pathlib import Path
-from cybershield_ml.synthetic import synthetic_events
+
 from cybershield_ml.features import engineer_features
-from cybershield_ml.model import train_model, score, save_model
+from cybershield_ml.model import save_model, score, train_model
+from cybershield_ml.synthetic import synthetic_events
 
 def main():
     events = synthetic_events()
