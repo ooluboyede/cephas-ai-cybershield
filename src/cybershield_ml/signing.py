@@ -4,7 +4,7 @@ import hashlib
 import json
 import re
 from pathlib import Path
-from typing import Mapping
+from collections.abc import Mapping
 
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import serialization
@@ -63,7 +63,7 @@ def sign_model(
     except (TypeError, ValueError) as exc:
         raise ValueError("publisher private key PEM is invalid or password is incorrect") from exc
     if not isinstance(private_key, Ed25519PrivateKey):
-        raise ValueError("publisher private key must use Ed25519")
+        raise TypeError("publisher private key must use Ed25519")
     signature = private_key.sign(_signed_payload(path, metadata))
     document = {
         "signature_schema_version": SIGNATURE_SCHEMA_VERSION,
@@ -97,7 +97,7 @@ def verify_model_signature(
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise ValueError("publisher signature document is unreadable or invalid JSON") from exc
     if not isinstance(document, dict):
-        raise ValueError("publisher signature document must be a JSON object")
+        raise TypeError("publisher signature document must be a JSON object")
     if document.get("signature_schema_version") != SIGNATURE_SCHEMA_VERSION:
         raise ValueError("publisher signature schema version is incompatible")
     if document.get("algorithm") != "Ed25519":
@@ -113,7 +113,7 @@ def verify_model_signature(
     except (KeyError, TypeError, ValueError) as exc:
         raise ValueError("publisher signature or trusted public key is invalid") from exc
     if not isinstance(public_key, Ed25519PublicKey):
-        raise ValueError("trusted publisher key must use Ed25519")
+        raise TypeError("trusted publisher key must use Ed25519")
     try:
         public_key.verify(signature, _signed_payload(path, metadata))
     except InvalidSignature as exc:
