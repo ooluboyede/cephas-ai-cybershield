@@ -106,6 +106,16 @@ def test_model_training_is_scoped_to_one_tenant(tmp_path):
     assert stored["artifact_sha256"] == metadata["artifact_sha256"]
 
 
+def test_save_model_rejects_dataset_different_from_training_data(tmp_path):
+    frame = sample_features()
+    model = train_model(frame, tenant_id="t1", contamination=0.15)
+    altered = frame.copy()
+    altered.loc[0, "auth_failures_5m"] = 99.0
+    with pytest.raises(ValueError, match="does not match the model training dataset"):
+        save_model(model, altered, tmp_path)
+    assert not (tmp_path / "isolation_forest.joblib").exists()
+
+
 def test_training_requires_explicit_tenant_scope():
     with pytest.raises(TypeError):
         train_model(sample_features())
