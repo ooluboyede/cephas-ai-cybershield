@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 EventType = Literal["auth_failure", "auth_success", "network_connection",
