@@ -1,10 +1,12 @@
 from datetime import datetime, timezone
+
 import pandas as pd
 import pytest
-from cybershield_ml.events import SecurityEvent
-from cybershield_ml.features import engineer_features, FEATURE_COLUMNS
-from cybershield_ml.model import train_model, score, save_model
+
 from cybershield_ml.evaluation import evaluate
+from cybershield_ml.events import SecurityEvent
+from cybershield_ml.features import FEATURE_COLUMNS, engineer_features
+from cybershield_ml.model import save_model, score, train_model
 
 def ev(i, kind, **kwargs):
     return SecurityEvent(event_id=str(i), tenant_id="t1", entity_id="u1",
