@@ -1,4 +1,5 @@
 import pandas as pd
+
 from .events import SecurityEvent
 
 FEATURE_COLUMNS = ["auth_failures_5m", "auth_successes_5m", "unique_source_ips_5m",
