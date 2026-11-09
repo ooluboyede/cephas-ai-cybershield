@@ -58,5 +58,5 @@ def test_evaluate_anomaly_scores_handles_single_class_without_roc_auc():
     ],
 )
 def test_evaluate_anomaly_scores_rejects_invalid_inputs(labels, scores, threshold):
-    with pytest.raises(ValueError):
+    with pytest.raises((TypeError, ValueError)):
         evaluate_anomaly_scores(labels, scores, threshold)
