@@ -191,9 +191,9 @@ def load_model(
         raise ValueError("tenant_id is required to load a tenant-scoped model")
     from .trust_context import DeploymentTrustContext, TrustedPublisherKeyring
     if not isinstance(deployment_context, DeploymentTrustContext):
-        raise ValueError("an authenticated deployment trust context is required")
+        raise TypeError("an authenticated deployment trust context is required")
     if not isinstance(trusted_publisher_keyring, TrustedPublisherKeyring):
-        raise ValueError("a deployment-scoped trusted publisher keyring is required")
+        raise TypeError("a deployment-scoped trusted publisher keyring is required")
     if deployment_context.tenant_id != tenant_id:
         raise ValueError("deployment context tenant does not match requested tenant")
     if (trusted_publisher_keyring.tenant_id, trusted_publisher_keyring.deployment_id) != (
