@@ -12,7 +12,7 @@ This is a reference HTTPS service for the CyberShield anti-rollback anchor. It m
 - Runtime DB role must have no UPDATE, DELETE or TRUNCATE privilege on the audit table. DDL ownership belongs to a separate administrator.
 - The anchor database, credentials, backup policy, operators and recovery process must be independent of the CyberShield application database boundary.
 
-This reference service is not certified or production-hardened. It does not itself provide HA, database backup immutability, key rotation orchestration, SIEM integration, external audit export or customer-specific disaster recovery. Those are deployment acceptance requirements.
+This reference service is not certified or production-hardened. It does not itself provide HA, database backup immutability, key rotation orchestration, SIEM integration, external audit export or customer-specific disaster recovery. Those are deployment acceptance requirements. **Important threat boundary:** separating the anchor database from the application database protects against restoration of the application database only while the anchor remains trustworthy. The anchor database can itself be rolled back by an administrator or by restoring one of its own old backups; its local audit table would roll back with it. Protection against anchor-database rollback requires an additional independent witness, such as a customer-selected immutable/WORM audit service or hardware-backed monotonic checkpoint, with its own separately administered recovery boundary. That witness integration is not implemented in this reference service. Do not claim protection against compromise or rollback of the anchor's own administrators/database.
 
 ## 1. Provision the anchor database
 
