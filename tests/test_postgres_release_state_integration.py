@@ -39,29 +39,29 @@ def postgres_store():
         connection.commit()
 
 
-def read_state(dsn, tenant_id, product):
+def read_state(dsn, tenant_id, product, deployment_id="deployment-default"):
     with psycopg.connect(dsn) as connection:
         return connection.execute(
             """
             SELECT release_sequence, version
             FROM cephas_model_release_state
-            WHERE tenant_id = %s AND product = %s
+            WHERE tenant_id = %s AND deployment_id = %s AND product = %s
             """,
-            (tenant_id, product),
+            (tenant_id, deployment_id, product),
         ).fetchone()
 
 
 def test_release_state_persists_across_new_store_and_connection(postgres_store):
     dsn = os.environ["CYBERSHIELD_TEST_DATABASE_URL"]
     postgres_store.accept_release(
-        tenant_id="tenant-persist", product="CyberShield", release_sequence=8, version="0.3.8"
+        tenant_id="tenant-persist", deployment_id="deployment-default", product="CyberShield", release_sequence=8, version="0.3.8"
     )
 
     # A fresh adapter instance and connection prove state is database-backed, not process-local.
     restarted_store = PostgresReleaseStateStore(lambda: psycopg.connect(dsn))
     with pytest.raises(ValueError, match="stale or conflicts"):
         restarted_store.accept_release(
-            tenant_id="tenant-persist", product="CyberShield", release_sequence=7, version="0.3.7"
+            tenant_id="tenant-persist", deployment_id="deployment-default", product="CyberShield", release_sequence=7, version="0.3.7"
         )
     assert read_state(dsn, "tenant-persist", "CyberShield") == (8, "0.3.8")
 
@@ -70,6 +70,7 @@ def test_release_floor_survives_a_separate_python_process(postgres_store):
     dsn = os.environ["CYBERSHIELD_TEST_DATABASE_URL"]
     postgres_store.accept_release(
         tenant_id="tenant-process-restart",
+        deployment_id="deployment-default",
         product="CyberShield",
         release_sequence=31,
         version="0.3.31",
@@ -86,6 +87,7 @@ store = PostgresReleaseStateStore(lambda: psycopg.connect(dsn))
 try:
     store.accept_release(
         tenant_id="tenant-process-restart",
+        deployment_id="deployment-default",
         product="CyberShield",
         release_sequence=30,
         version="0.3.30",
@@ -108,7 +110,7 @@ else:
 
 
 def test_same_release_is_idempotent_but_conflicting_version_is_rejected(postgres_store):
-    args = {"tenant_id": "tenant-idempotent", "product": "CyberShield", "release_sequence": 9}
+    args = {"tenant_id": "tenant-idempotent", "deployment_id": "deployment-default", "product": "CyberShield", "release_sequence": 9}
     postgres_store.accept_release(**args, version="0.3.9")
     postgres_store.accept_release(**args, version="0.3.9")
 
@@ -122,13 +124,13 @@ def test_same_release_is_idempotent_but_conflicting_version_is_rejected(postgres
 
 def test_release_state_isolated_by_tenant_and_product(postgres_store):
     postgres_store.accept_release(
-        tenant_id="tenant-a", product="CyberShield", release_sequence=5, version="5"
+        tenant_id="tenant-a", deployment_id="deployment-default", product="CyberShield", release_sequence=5, version="5"
     )
     postgres_store.accept_release(
-        tenant_id="tenant-b", product="CyberShield", release_sequence=2, version="2"
+        tenant_id="tenant-b", deployment_id="deployment-default", product="CyberShield", release_sequence=2, version="2"
     )
     postgres_store.accept_release(
-        tenant_id="tenant-a", product="WeatherShield", release_sequence=1, version="1"
+        tenant_id="tenant-a", deployment_id="deployment-default", product="WeatherShield", release_sequence=1, version="1"
     )
 
     dsn = os.environ["CYBERSHIELD_TEST_DATABASE_URL"]
@@ -145,6 +147,7 @@ def test_concurrent_competing_releases_never_lower_accepted_sequence(postgres_st
         try:
             postgres_store.accept_release(
                 tenant_id="tenant-race",
+                deployment_id="deployment-default",
                 product="CyberShield",
                 release_sequence=sequence,
                 version=version,
@@ -162,5 +165,5 @@ def test_concurrent_competing_releases_never_lower_accepted_sequence(postgres_st
 
     with pytest.raises(ValueError, match="stale or conflicts"):
         postgres_store.accept_release(
-            tenant_id="tenant-race", product="CyberShield", release_sequence=20, version="0.3.20"
+            tenant_id="tenant-race", deployment_id="deployment-default", product="CyberShield", release_sequence=20, version="0.3.20"
         )
