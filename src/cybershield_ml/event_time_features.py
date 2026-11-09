@@ -90,8 +90,11 @@ def aggregate_event_time_features(
         if not product_definitions.get(product):
             raise ValueError(f"no feature definitions registered for product {product!r}")
         windows = {item.window_seconds for item in product_definitions[product]}
+        versions = {item.feature_set_version for item in product_definitions[product]}
         if len(windows) != 1:
             raise ValueError("one aggregation batch requires one window size per product")
+        if len(versions) != 1:
+            raise ValueError("one aggregation batch requires one feature-set version per product")
 
     accepted: dict[tuple, list[SecurityTelemetryEvent]] = defaultdict(list)
     uncertain_groups: set[tuple] = set()
@@ -165,10 +168,7 @@ def aggregate_event_time_features(
             business_unit_id=first.business_unit_id,
             entity_type=first.entity_type,
             entity_id=first.entity_id,
-            feature_set_version=".".join(
-                str(max(1, int(item.schema_version.split(".")[0])))
-                for item in []
-            ) or "1.0.0",
+            feature_set_version=product_definitions[first.product_id][0].feature_set_version,
             window_start=window_start,
             window_end=window_end,
             source_event_count=len(group_events),
