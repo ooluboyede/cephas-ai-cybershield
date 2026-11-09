@@ -150,6 +150,11 @@ administered anchor PostgreSQL instance with real TLS/mTLS certificates. Custome
 deployment still requires service HA, independent anchor backup/restore and failover
 drills, audit retention/export, token and certificate rotation/revocation, monitoring,
 network segmentation, load/concurrency testing and a documented break-glass procedure.
+
+The separate anchor database and its local audit table do not protect against rollback
+of the anchor database itself. An independent immutable/WORM witness or hardware-backed
+monotonic checkpoint is required to protect against anchor-admin compromise or restoring
+an old anchor snapshot. That second-level witness is not implemented.
 The reference WSGI service must not be exposed without its TLS/mTLS listener and
 customer-specific operational hardening.
 
