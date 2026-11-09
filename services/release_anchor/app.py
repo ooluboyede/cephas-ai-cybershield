@@ -42,6 +42,19 @@ def _load_clients():
             raise RuntimeError("each anchor client requires a client_id")
         if not isinstance(client.get("scopes"), list):
             raise RuntimeError("each anchor client requires a scopes list")
+        for scope in client["scopes"]:
+            if (
+                not isinstance(scope, dict)
+                or not isinstance(scope.get("tenant_id"), str)
+                or not isinstance(scope.get("deployment_id"), str)
+                or not scope["tenant_id"].strip()
+                or not scope["deployment_id"].strip()
+                or ("products" in scope and (
+                    not isinstance(scope["products"], list)
+                    or not all(isinstance(item, str) and item.strip() for item in scope["products"])
+                ))
+            ):
+                raise RuntimeError("anchor client scope configuration is invalid")
     return configured
 
 
@@ -51,7 +64,10 @@ def _authenticate(environ, tenant_id, deployment_id, product):
     if scheme.lower() != "bearer" or not token:
         return None
     digest = hashlib.sha256(token.encode("utf-8")).hexdigest()
-    clients = _load_clients()
+    try:
+        clients = _load_clients()
+    except RuntimeError:
+        return None
     matched = None
     for expected_hash, client in clients.items():
         if hmac.compare_digest(digest, expected_hash):
