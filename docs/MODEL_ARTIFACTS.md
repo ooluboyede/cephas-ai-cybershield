@@ -110,26 +110,33 @@ customer deployment, tenant and product. It must:
 - be shared by all service instances and survive restart, failover and restore;
 - fail closed when the state store is unavailable.
 
-The repository defines the interface only. A production customer deployment must
-implement it using a transactional database or equivalent durable coordination store,
-with authenticated tenant context, uniqueness/locking or compare-and-set semantics,
-backups, access controls and an auditable administrative path. A process-local dictionary
-or in-memory cache is not a production implementation. The test suite's in-memory
-stand-in tests the contract; it is not evidence of a production database adapter.
+The repository now includes a PostgreSQL DB-API adapter, `PostgresReleaseStateStore`,
+using one atomic `INSERT ... ON CONFLICT ... DO UPDATE ... WHERE ... RETURNING`
+statement keyed by `(tenant_id, product)`. The conditional update accepts a higher
+sequence or an idempotent repeat of the same sequence/version, and rejects lower
+sequences or same-sequence/different-version conflicts. The operation commits on
+acceptance and rolls back on rejection or operational failure.
 
-Example integration shape:
+Provision the table through the customer's database migration process using
+`POSTGRES_RELEASE_STATE_SCHEMA`. Example with a customer-owned psycopg connection
+factory:
 
 ```python
-from cybershield_ml.model import load_model
-from customer_platform.release_state import PostgresReleaseStateStore
+import psycopg
+from cybershield_ml.release_state import PostgresReleaseStateStore
 
-model = load_model(
-    "installed/model",
-    tenant_id=authenticated_tenant_id,
-    trusted_public_keys=trusted_publishers,
-    release_state_store=PostgresReleaseStateStore(customer_database),
-)
+def customer_connection():
+    return psycopg.connect(customer_managed_dsn)
+
+release_store = PostgresReleaseStateStore(customer_connection)
 ```
+
+The connection factory, credentials, schema migration and database operations remain
+under customer control. The adapter uses DB-API cursor/commit/rollback/close methods;
+it does not create or manage customer infrastructure. The test suite includes a
+DB-API contract double to verify SQL predicates, tenant/product scoping, commit and
+rollback behavior. This is not a substitute for integration tests against a real
+PostgreSQL server or multi-instance concurrency/restart/backup-restore testing.
 
 An emergency rollback must not lower or silently reset the stored floor. It requires a
 separate customer-authorized, audited break-glass procedure that records the approver,
@@ -137,10 +144,11 @@ reason, target artifact digest and resulting floor. That administrative workflow
 implemented by this ML library. The release sequence is a rollback control, not a
 substitute for publisher key revocation or tenant/database isolation.
 
-**Important limitation:** the state-store interface and its test double are implemented
-here; a production PostgreSQL/customer deployment adapter, transactional concurrency
-tests against that adapter, backup/restore behavior and the break-glass workflow remain
-unimplemented and must be completed before production certification.
+**Important limitation:** the PostgreSQL adapter and DB-API contract tests are implemented,
+but no live PostgreSQL integration/concurrency test has yet been run. Customer deployment
+still needs migration execution, connection-pool/HA configuration, restart and backup/restore
+validation, monitoring, access controls and an audited break-glass rollback procedure.
+These operational controls remain prerequisites for production certification.
 
 
 ## Reproducible dependency installation
