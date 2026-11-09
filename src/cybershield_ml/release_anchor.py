@@ -158,6 +158,8 @@ class AnchoredReleaseStateStore:
                 self._database.accept_release(
                     **scope, release_sequence=anchor_floor[0], version=anchor_floor[1]
                 )
+            if (release_sequence, version) == anchor_floor:
+                return
 
         self._anchor.advance_floor(
             **scope, release_sequence=release_sequence, version=version
