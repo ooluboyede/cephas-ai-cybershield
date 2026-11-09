@@ -24,6 +24,7 @@ class FeatureDefinition(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, str_strip_whitespace=True)
 
     schema_version: Literal["1.0.0"] = "1.0.0"
+    feature_set_version: str = Field(default="1.0.0", min_length=1, max_length=64)
     feature_id: str = Field(pattern=r"^[a-z][a-z0-9_.-]{2,127}$")
     product_id: str = Field(min_length=1, max_length=96)
     description: str = Field(min_length=8, max_length=512)
