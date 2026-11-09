@@ -47,6 +47,7 @@ class SecurityTelemetryEvent(BaseModel):
     source_version: str = Field(min_length=1, max_length=64)
     source_event_id: str | None = Field(default=None, max_length=128)
     clock_quality: ClockQuality = "unknown"
+    measured_clock_offset_seconds: float | None = None
     data_classification: DataClassification = "internal"
     attributes: dict[str, str | int | float | bool | None] = Field(default_factory=dict)
 
@@ -63,6 +64,13 @@ class SecurityTelemetryEvent(BaseModel):
         for key, item in value.items():
             if isinstance(item, float) and not math.isfinite(item):
                 raise ValueError(f"attribute {key!r} must be finite")
+        return value
+
+    @field_validator("measured_clock_offset_seconds")
+    @classmethod
+    def validate_clock_offset(cls, value):
+        if value is not None and not math.isfinite(value):
+            raise ValueError("measured clock offset must be finite")
         return value
 
 
