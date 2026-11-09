@@ -139,6 +139,27 @@ def test_release_state_isolated_by_tenant_and_product(postgres_store):
     assert read_state(dsn, "tenant-a", "WeatherShield") == (1, "1")
 
 
+def test_release_state_isolated_by_deployment(postgres_store):
+    postgres_store.accept_release(
+        tenant_id="tenant-shared",
+        deployment_id="deployment-a",
+        product="CyberShield",
+        release_sequence=45,
+        version="0.3.45",
+    )
+    postgres_store.accept_release(
+        tenant_id="tenant-shared",
+        deployment_id="deployment-b",
+        product="CyberShield",
+        release_sequence=12,
+        version="0.3.12",
+    )
+
+    dsn = os.environ["CYBERSHIELD_TEST_DATABASE_URL"]
+    assert read_state(dsn, "tenant-shared", "CyberShield", "deployment-a") == (45, "0.3.45")
+    assert read_state(dsn, "tenant-shared", "CyberShield", "deployment-b") == (12, "0.3.12")
+
+
 def test_concurrent_competing_releases_never_lower_accepted_sequence(postgres_store):
     barrier = Barrier(2)
 
