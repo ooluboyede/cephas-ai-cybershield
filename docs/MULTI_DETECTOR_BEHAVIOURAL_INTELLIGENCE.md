@@ -16,7 +16,7 @@ features through product-owned adapters and definitions.
   entity-history baselines.
 - Explicit peer-group deviation using customer-supplied peer-group identifiers and
   baseline snapshots.
-- Scope validation for tenant, deployment, environment, product and business unit.
+- Scope validation for tenant, deployment, environment, product, business unit and exact entity identity for entity-history baselines.
 - Detector execution isolation: a failing detector returns an explicit failed outcome,
   never a clean/no-alert outcome and never leaks exception details into the result.
 - Evidence fields explaining the feature, comparator, threshold or baseline statistics.
