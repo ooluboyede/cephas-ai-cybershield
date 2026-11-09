@@ -8,9 +8,9 @@ operated stateful backend and are deliberately not claimed here.
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import Mapping
 
 from .contracts import (
     SecurityTelemetryEvent,
