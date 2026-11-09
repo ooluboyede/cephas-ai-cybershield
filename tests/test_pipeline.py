@@ -35,8 +35,20 @@ class MemoryReleaseStateStore:
 
 
 def load_model(*args, **kwargs):
-    """Use an isolated test store unless a test explicitly supplies persistent state."""
+    """Use isolated test trust objects and state unless a test supplies explicit ones."""
     kwargs.setdefault("release_state_store", MemoryReleaseStateStore())
+    tenant_id = kwargs.get("tenant_id", args[1] if len(args) > 1 else None)
+    public_keys = kwargs.get("trusted_public_keys", args[2] if len(args) > 2 else None)
+    kwargs.setdefault(
+        "deployment_context",
+        DeploymentTrustContext(tenant_id=tenant_id, deployment_id="default"),
+    )
+    kwargs.setdefault(
+        "trusted_publisher_keyring",
+        TrustedPublisherKeyring(
+            tenant_id=tenant_id, deployment_id="default", public_keys=public_keys or {}
+        ),
+    )
     return _load_model(*args, **kwargs)
 
 
