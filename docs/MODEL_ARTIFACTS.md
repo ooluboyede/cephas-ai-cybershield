@@ -62,3 +62,14 @@ Loading fails closed if the signature is absent, malformed, signed by an unknown
 - Joblib remains unsafe for untrusted files; signature verification is mandatory before loading.
 
 Tenant scope in this ML package remains an application-layer safeguard. It does not replace authenticated server-side tenant context or database-enforced tenant isolation.
+
+
+## Independent review regression evidence (GIGA-SEC-01 / GIGA-SEC-04)
+
+The 0.3.3 regression suite additionally verifies that:
+- Reordering metadata JSON keys without changing the parsed object invalidates the signature, because the signature binds the exact metadata file bytes.
+- A whitespace-only metadata-byte change invalidates the signature.
+- A signature key ID is resolved by exact lookup in the customer-provided trusted-key mapping. There is no fallback to another configured ID, even if another ID maps to the same public key.
+- Signing rejects malformed key IDs, including empty values, whitespace, newline characters and identifiers longer than 128 characters.
+
+These tests demonstrate the behavior of this implementation; they do not by themselves establish that the reviewer's complete attack scenarios have been addressed. Gigabrute is asked to identify the concrete input/path they consider exploitable if either finding remains open.
