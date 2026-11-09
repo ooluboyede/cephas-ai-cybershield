@@ -111,6 +111,38 @@ class WitnessCheckpoint:
         return self.tenant_id, self.deployment_id, self.product
 
 
+def validate_checkpoint_transition(
+    current: WitnessCheckpoint | None, candidate: WitnessCheckpoint
+) -> str:
+    """Validate a proposed append against the currently observed scope head.
+
+    Returns "append" for the single valid next checkpoint or "idempotent"
+    when the candidate is byte-for-byte the current head. Durable backends
+    must additionally enforce operation_id uniqueness over the full history
+    and perform this check atomically with the append.
+    """
+    if current is None:
+        if candidate.release_sequence != 1 or candidate.previous_checkpoint_sha256 is not None:
+            raise ValueError("genesis checkpoint must be sequence 1 with no predecessor")
+        return "append"
+
+    if candidate.scope != current.scope:
+        raise ValueError("checkpoint scope does not match current witness head")
+
+    if candidate.checkpoint_sha256 == current.checkpoint_sha256:
+        return "idempotent"
+
+    if candidate.operation_id == current.operation_id:
+        raise ValueError("operation_id was reused for a different checkpoint")
+    if candidate.release_sequence <= current.release_sequence:
+        raise ValueError("stale or conflicting release sequence")
+    if candidate.release_sequence != current.release_sequence + 1:
+        raise ValueError("release sequence must advance by exactly one")
+    if candidate.previous_checkpoint_sha256 != current.checkpoint_sha256:
+        raise ValueError("candidate predecessor does not match current witness head")
+    return "append"
+
+
 @dataclass(frozen=True)
 class WitnessReceipt:
     witness_id: str
@@ -194,6 +226,9 @@ class ImmutableReleaseWitness(Protocol):
 
     Implementations must provide linearizable compare-and-append, durable
     acknowledgements, exact idempotency and independently verifiable receipts.
+    The backend must enforce operation_id uniqueness across the full scope history:
+    an exact retry returns the original receipt, while reuse for different content
+    is rejected. Sequence validation and append must be one atomic operation.
     Test doubles do not satisfy production acceptance.
     """
 
