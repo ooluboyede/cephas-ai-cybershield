@@ -152,3 +152,37 @@ development extras. It does not pin the GitHub-hosted runner image or third-part
 GitHub Actions by immutable commit SHA; those remain separate supply-chain hardening
 items. Revalidate and deliberately update the lock as part of the dependency review
 cadence.
+
+
+## Deployment-bound tenant trust context — GIGA-SEC-03
+
+CyberShield 0.3.3 now requires a `DeploymentTrustContext` and a
+`TrustedPublisherKeyring` when loading a model. The hosting application must create
+that context only from its verified server-side authentication/session layer; never
+accept tenant or deployment identifiers from an untrusted request body or model file.
+The trusted publisher keyring is separately provisioned and scoped to the same
+`tenant_id` and `deployment_id`. Model metadata includes the deployment ID, and the
+Ed25519 signature binds it. A model copied from another deployment is rejected before
+Joblib deserialization. A keyring for another tenant/deployment is rejected, and the
+loader does not allow an unscoped key mapping to override the scoped keyring.
+
+Example (the context below must be supplied by the authenticated host application):
+
+```python
+from cybershield_ml.model import load_model
+from cybershield_ml.trust_context import DeploymentTrustContext, TrustedPublisherKeyring
+
+context = DeploymentTrustContext(tenant_id=verified_tenant_id, deployment_id=verified_deployment_id)
+keyring = TrustedPublisherKeyring(tenant_id=verified_tenant_id,
+    deployment_id=verified_deployment_id, public_keys=customer_provisioned_keys)
+model = load_model("installed/model", tenant_id=context.tenant_id,
+    trusted_public_keys=keyring.public_keys, release_state_store=release_store,
+    deployment_context=context, trusted_publisher_keyring=keyring)
+```
+
+**Security boundary:** these immutable value objects do not authenticate callers by
+themselves. The web/API service remains responsible for deriving the context from a
+trusted identity provider and protecting keyring provisioning. This change does not
+implement PostgreSQL RLS, database tenant isolation, identity/MFA, or a production
+release-state adapter. Cross-tenant and cross-deployment tests are required before
+review closure.
