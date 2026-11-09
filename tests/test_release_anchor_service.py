@@ -45,8 +45,9 @@ class FakeConnection:
         self.rolled_back = True
 
 
-def invoke(monkeypatch, method, token, payload=None, db_connection=None, scope=None):
-    token_hash = hashlib.sha256(token.encode()).hexdigest()
+def invoke(monkeypatch, method, token, payload=None, db_connection=None, scope=None, authorized_token=None):
+    configured_token = authorized_token or token
+    token_hash = hashlib.sha256(configured_token.encode()).hexdigest()
     monkeypatch.setenv(
         "CEPHAS_ANCHOR_CLIENTS_JSON",
         json.dumps({
@@ -82,7 +83,9 @@ def invoke(monkeypatch, method, token, payload=None, db_connection=None, scope=N
 
 
 def test_anchor_service_denies_invalid_token_before_database_access(monkeypatch):
-    status, payload, _ = invoke(monkeypatch, "GET", "wrong-token")
+    status, payload, _ = invoke(
+        monkeypatch, "GET", "wrong-token", authorized_token="expected-token"
+    )
     assert status == "403 Forbidden"
     assert payload["error"] == "not_authorized"
 
