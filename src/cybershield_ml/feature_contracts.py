@@ -120,10 +120,15 @@ def validate_feature_vector(
     if foreign:
         raise ValueError(f"features are owned by another product: {sorted(foreign)}")
 
+    window_seconds = int((vector.window_end - vector.window_start).total_seconds())
     missing_quarantine_features = []
     for feature_id, definition in definitions.items():
         if definition.product_id != vector.product_id:
             continue
+        if window_seconds != definition.window_seconds:
+            raise ValueError(
+                f"feature {feature_id!r} requires a {definition.window_seconds}-second window"
+            )
         present = feature_id in vector.features and vector.features[feature_id] is not None
         if not present:
             if definition.missing_value_policy == "zero":
