@@ -125,3 +125,30 @@ substitute for publisher key revocation or tenant/database isolation.
 here; a production PostgreSQL/customer deployment adapter, transactional concurrency
 tests against that adapter, backup/restore behavior and the break-glass workflow remain
 unimplemented and must be completed before production certification.
+
+
+## Reproducible dependency installation
+
+The repository commits `uv.lock`, generated with uv 0.9.5 on Python 3.11.
+The lock records exact resolved package versions and distribution SHA-256 hashes.
+CI verifies the lock is current with `uv lock --check --python 3.11`, installs
+only the locked resolution using `uv sync --locked --all-extras --python 3.11`,
+and runs Ruff and pytest through `uv run --locked`.
+
+For a deliberate dependency update:
+
+1. Review the proposed version-range changes in `pyproject.toml`.
+2. Use the repository's pinned uv version and Python 3.11 to run `uv lock --python 3.11`.
+3. Review the complete `uv.lock` diff, including package source, version and hashes.
+4. Verify with `uv sync --locked --all-extras --python 3.11`, Ruff and the full test suite.
+5. Submit the lockfile and manifest changes together for code review.
+
+Do not edit package hashes manually or regenerate the lock as an unreviewed routine
+CI side effect. The one-time bootstrap workflow has been removed after generating the
+committed lockfile. CI itself is read-only and fails if the manifest and lock disagree.
+
+The lockfile pins the Python application dependency resolution, including runtime and
+development extras. It does not pin the GitHub-hosted runner image or third-party
+GitHub Actions by immutable commit SHA; those remain separate supply-chain hardening
+items. Revalidate and deliberately update the lock as part of the dependency review
+cadence.
