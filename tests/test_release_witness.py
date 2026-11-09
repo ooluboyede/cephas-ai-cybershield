@@ -153,4 +153,4 @@ def test_transition_rejects_stale_forked_or_conflicting_candidate(overrides, mat
 
 def test_transition_rejects_non_genesis_initial_checkpoint():
     with pytest.raises(ValueError, match="genesis"):
-        validate_checkpoint(None, checkpoint(release_sequence=2))
+        validate_checkpoint_transition(None, checkpoint(release_sequence=2))
