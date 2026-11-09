@@ -14,8 +14,15 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-          cache: pip
-      - run: python -m pip install --upgrade pip
-      - run: pip install -e ".[dev]"
-      - run: ruff check src tests scripts
-      - run: pytest -q
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.9.5"
+          enable-cache: true
+      - name: Verify lockfile is current
+        run: uv lock --check --python 3.11
+      - name: Install exact locked dependencies
+        run: uv sync --locked --all-extras --python 3.11
+      - name: Ruff
+        run: uv run --locked ruff check src tests scripts
+      - name: Tests
+        run: uv run --locked pytest -q
