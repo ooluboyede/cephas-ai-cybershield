@@ -39,6 +39,6 @@ jobs:
       - name: Install exact locked dependencies
         run: uv sync --locked --all-extras --python 3.11
       - name: Ruff
-        run: uv run --locked ruff check src tests scripts
+        run: uv run --locked ruff check src tests scripts services
       - name: Unit and PostgreSQL integration tests
         run: uv run --locked pytest -q
