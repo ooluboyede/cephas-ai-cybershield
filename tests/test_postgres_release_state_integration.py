@@ -3,10 +3,9 @@
 Set CYBERSHIELD_TEST_DATABASE_URL to a disposable PostgreSQL database. CI supplies
 an isolated PostgreSQL service container. These tests never use customer data.
 """
+import os
 from concurrent.futures import ThreadPoolExecutor
 from threading import Barrier
-
-import os
 
 import psycopg
 import pytest
@@ -66,7 +65,7 @@ def test_release_state_survives_new_store_and_connection(postgres_store):
 
 
 def test_same_release_is_idempotent_but_conflicting_version_is_rejected(postgres_store):
-    args = dict(tenant_id="tenant-idempotent", product="CyberShield", release_sequence=9)
+    args = {"tenant_id": "tenant-idempotent", "product": "CyberShield", "release_sequence": 9}
     postgres_store.accept_release(**args, version="0.3.9")
     postgres_store.accept_release(**args, version="0.3.9")
 
