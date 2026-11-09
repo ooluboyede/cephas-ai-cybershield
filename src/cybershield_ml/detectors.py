@@ -98,6 +98,7 @@ class BaselineSnapshot(BaseModel):
     environment: str = Field(min_length=1, max_length=64)
     product_id: str = Field(min_length=1, max_length=96)
     business_unit_id: str | None = Field(default=None, max_length=128)
+    entity_id: str | None = Field(default=None, max_length=256)
     feature_id: str = Field(min_length=1, max_length=128)
     baseline_kind: BaselineKind
     peer_group_id: str | None = Field(default=None, max_length=128)
@@ -114,8 +115,12 @@ class BaselineSnapshot(BaseModel):
     def peer_group_required(self):
         if self.baseline_kind == "peer_group" and not self.peer_group_id:
             raise ValueError("peer-group baselines require peer_group_id")
+        if self.baseline_kind == "peer_group" and self.entity_id is not None:
+            raise ValueError("peer-group baselines cannot specify entity_id")
         if self.baseline_kind == "entity_history" and self.peer_group_id is not None:
             raise ValueError("entity-history baselines cannot specify peer_group_id")
+        if self.baseline_kind == "entity_history" and not self.entity_id:
+            raise ValueError("entity-history baselines require entity_id")
         return self
 
 
@@ -354,6 +359,10 @@ def _baseline_matches_scope(
         and baseline.environment == context.trusted_scope.environment
         and baseline.product_id == vector.product_id
         and baseline.business_unit_id == vector.business_unit_id
+        and (
+            baseline.baseline_kind != "entity_history"
+            or baseline.entity_id == vector.entity_id
+        )
     )
 
 
