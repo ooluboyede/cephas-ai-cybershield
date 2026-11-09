@@ -146,6 +146,7 @@ def test_cross_tenant_baseline_fails_closed(context):
         environment="test",
         product_id="fraudshield",
         business_unit_id="bu-a",
+        entity_id="user-1",
         feature_id="login_count",
         baseline_kind="entity_history",
         values=(1, 2, 3, 4, 5),
@@ -183,6 +184,7 @@ def test_detector_exception_is_explicit_failure(context):
     assert result.risk_score is None
     assert result.error_code == "DETECTOR_EXECUTION_FAILED"
     assert "internal details" not in result.explanation
+
 
 def test_entity_history_baseline_cannot_be_reused_for_another_entity(context):
     baseline = BaselineSnapshot(
