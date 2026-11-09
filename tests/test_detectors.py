@@ -97,6 +97,7 @@ def test_robust_detector_uses_median_absolute_deviation(context):
         environment="test",
         product_id="fraudshield",
         business_unit_id="bu-a",
+        entity_id="user-1",
         feature_id="login_count",
         baseline_kind="entity_history",
         values=(1, 2, 2, 3, 3, 4, 4, 5),
