@@ -49,13 +49,13 @@ def read_state(dsn, tenant_id, product):
         ).fetchone()
 
 
-def test_release_state_survives_new_store_and_connection(postgres_store):
+def test_release_state_persists_across_new_store_and_connection(postgres_store):
     dsn = os.environ["CYBERSHIELD_TEST_DATABASE_URL"]
     postgres_store.accept_release(
         tenant_id="tenant-persist", product="CyberShield", release_sequence=8, version="0.3.8"
     )
 
-    # A fresh adapter instance and fresh database connection represent a process restart.
+    # A fresh adapter instance and connection prove state is database-backed, not process-local.
     restarted_store = PostgresReleaseStateStore(lambda: psycopg.connect(dsn))
     with pytest.raises(ValueError, match="stale or conflicts"):
         restarted_store.accept_release(
