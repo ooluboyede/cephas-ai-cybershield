@@ -34,19 +34,19 @@ def evaluate_anomaly_scores(
     This reports predictive performance, not proof that an event is malicious.
     """
     if not isinstance(y_true, list) or not isinstance(decision_scores, list):
-        raise ValueError("y_true and decision_scores must be lists")
+        raise TypeError("y_true and decision_scores must be lists")
     if not y_true or len(y_true) != len(decision_scores):
         raise ValueError("labels and decision scores must have equal non-zero lengths")
     if any(type(label) is not int or label not in (0, 1) for label in y_true):
         raise ValueError("labels must contain only integer values 0 or 1")
     if isinstance(threshold, bool) or not isinstance(threshold, (int, float)):
-        raise ValueError("threshold must be a finite number")
+        raise TypeError("threshold must be a finite number")
     if not math.isfinite(float(threshold)):
         raise ValueError("threshold must be a finite number")
     scores: list[float] = []
     for score in decision_scores:
         if isinstance(score, bool) or not isinstance(score, (int, float)):
-            raise ValueError("decision scores must be finite numbers")
+            raise TypeError("decision scores must be finite numbers")
         value = float(score)
         if not math.isfinite(value):
             raise ValueError("decision scores must be finite numbers")
@@ -54,7 +54,7 @@ def evaluate_anomaly_scores(
 
     predictions = [int(score < float(threshold)) for score in scores]
     matrix = confusion_matrix(y_true, predictions, labels=[0, 1])
-    true_negative, false_positive, false_negative, true_positive = (
+    _true_negative, false_positive, false_negative, true_positive = (
         int(value) for value in matrix.ravel()
     )
     total = len(y_true)
