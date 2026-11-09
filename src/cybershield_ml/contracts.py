@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import datetime, timezone
+import math
+from datetime import datetime
 from typing import Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -61,7 +62,7 @@ class SecurityTelemetryEvent(BaseModel):
     @classmethod
     def reject_non_finite_attributes(cls, value):
         for key, item in value.items():
-            if isinstance(item, float) and not __import__("math").isfinite(item):
+            if isinstance(item, float) and not math.isfinite(item):
                 raise ValueError(f"attribute {key!r} must be finite")
         return value
 
