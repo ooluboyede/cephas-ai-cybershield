@@ -43,6 +43,7 @@ def evaluate_anomaly_scores(
         raise TypeError("threshold must be a finite number")
     if not math.isfinite(float(threshold)):
         raise ValueError("threshold must be a finite number")
+
     scores: list[float] = []
     for score in decision_scores:
         if isinstance(score, bool) or not isinstance(score, (int, float)):
@@ -54,21 +55,25 @@ def evaluate_anomaly_scores(
 
     predictions = [int(score < float(threshold)) for score in scores]
     matrix = confusion_matrix(y_true, predictions, labels=[0, 1])
-    _true_negative, false_positive, false_negative, true_positive = (
+    _, false_positive, false_negative, true_positive = (
         int(value) for value in matrix.ravel()
     )
     total = len(y_true)
     positives = sum(y_true)
     negatives = total - positives
-    precision = true_positive / (true_positive + false_positive) if (
-        true_positive + false_positive
-    ) else 0.0
+    precision = (
+        true_positive / (true_positive + false_positive)
+        if true_positive + false_positive
+        else 0.0
+    )
     recall = true_positive / positives if positives else 0.0
-    f1 = (2 * precision * recall / (precision + recall)) if (
-        precision + recall
-    ) else 0.0
+    f1 = (
+        2 * precision * recall / (precision + recall)
+        if precision + recall
+        else 0.0
+    )
 
-    result = {
+    return {
         "label_contract": {"0": "benign", "1": "malicious_or_suspicious"},
         "score_contract": "lower_is_more_anomalous",
         "threshold_operator": "decision_score < threshold",
@@ -88,10 +93,17 @@ def evaluate_anomaly_scores(
         ),
         "alert_count": sum(predictions),
         "alert_rate": sum(predictions) / total,
-        "average_precision": (\n            average_precision_score(y_true, [-s for s in scores]) if positives else None\n        ),
-        "roc_auc": roc_auc_score(y_true, [-s for s in scores]) if len(set(y_true)) == 2 else None,
+        "average_precision": (
+            average_precision_score(y_true, [-score for score in scores])
+            if positives
+            else None
+        ),
+        "roc_auc": (
+            roc_auc_score(y_true, [-score for score in scores])
+            if len(set(y_true)) == 2
+            else None
+        ),
         "interpretation": (
             "Anomaly scores are triage signals; they do not establish malicious activity."
         ),
     }
-    return result
