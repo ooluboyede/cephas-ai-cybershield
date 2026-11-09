@@ -178,6 +178,8 @@ def load_model(
     tenant_id: str,
     trusted_public_keys: dict[str, bytes | str],
     release_state_store: ReleaseStateStore,
+    deployment_context,
+    trusted_publisher_keyring,
 ) -> IsolationForest:
     """Load a locally controlled model only after metadata and artifact checks pass.
 
@@ -187,11 +189,26 @@ def load_model(
     """
     if not tenant_id or not tenant_id.strip():
         raise ValueError("tenant_id is required to load a tenant-scoped model")
+    from .trust_context import DeploymentTrustContext, TrustedPublisherKeyring
+    if not isinstance(deployment_context, DeploymentTrustContext):
+        raise ValueError("an authenticated deployment trust context is required")
+    if not isinstance(trusted_publisher_keyring, TrustedPublisherKeyring):
+        raise ValueError("a deployment-scoped trusted publisher keyring is required")
+    if deployment_context.tenant_id != tenant_id:
+        raise ValueError("deployment context tenant does not match requested tenant")
+    if (trusted_publisher_keyring.tenant_id, trusted_publisher_keyring.deployment_id) != (
+        deployment_context.tenant_id, deployment_context.deployment_id
+    ):
+        raise ValueError("publisher keyring is not scoped to the authenticated deployment")
     path = Path(directory)
     if release_state_store is None:
         raise ValueError("a durable customer release-state store is required")
     metadata = _read_and_validate_metadata(path / "model_metadata.json", tenant_id)
-    verify_model_signature(path, metadata, trusted_public_keys)
+    if metadata["deployment_id"] != deployment_context.deployment_id:
+        raise ValueError("model metadata does not match the authenticated deployment")
+    if dict(trusted_public_keys) != dict(trusted_publisher_keyring.public_keys):
+        raise ValueError("unscoped publisher keys cannot override the deployment keyring")
+    verify_model_signature(path, metadata, trusted_publisher_keyring.public_keys)
     artifact_path = path / "isolation_forest.joblib"
     if artifact_path.is_symlink() or not artifact_path.is_file():
         raise ValueError("model artifact must be a regular, non-symlink file")
