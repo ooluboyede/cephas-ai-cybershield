@@ -35,7 +35,7 @@ jobs:
           version: "0.9.5"
           enable-cache: true
       - name: Verify lockfile is current
-        run: uv lock --check --python 3.11
+        run: uv lock --check --python 3.11 --all-extras
       - name: Install exact locked dependencies
         run: uv sync --locked --all-extras --python 3.11
       - name: Ruff
