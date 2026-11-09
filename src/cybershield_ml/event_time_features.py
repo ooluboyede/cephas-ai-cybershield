@@ -80,6 +80,9 @@ def aggregate_event_time_features(
         unique[key] = event
         fingerprints[key] = fingerprint
 
+    if any(key != item.feature_id for key, item in definitions.items()):
+        raise ValueError("feature definition mapping keys must match feature_id")
+
     products = {event.product_id for event in unique.values()}
     product_definitions: dict[str, list[FeatureDefinition]] = defaultdict(list)
     for definition in definitions.values():
@@ -211,7 +214,7 @@ def _aggregate_one(
     if not values:
         return None
     if definition.aggregation == "distinct_count":
-        return len({str(value) for value in values})
+        return len({(type(value).__name__, value) for value in values})
     if definition.aggregation == "ratio":
         if any(type(value) is not bool for value in values):
             raise TypeError("ratio source attributes must be boolean")
