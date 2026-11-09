@@ -129,3 +129,5 @@ def test_http_anchor_rejects_plain_http_and_unscoped_empty_token():
         HttpReleaseFloorAnchor("http://anchor.internal", "secret")
     with pytest.raises(ValueError, match="bearer token"):
         HttpReleaseFloorAnchor("https://anchor.internal", " ")
+    with pytest.raises(ValueError, match="mutual TLS"):
+        HttpReleaseFloorAnchor("https://anchor.internal", "valid-token")
