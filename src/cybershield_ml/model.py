@@ -10,8 +10,8 @@ from sklearn.ensemble import IsolationForest
 
 from . import FEATURE_SCHEMA_VERSION, MODEL_METADATA_SCHEMA_VERSION, __version__
 from .features import FEATURE_COLUMNS
-from .signing import verify_model_signature
 from .release_state import ReleaseStateStore
+from .signing import verify_model_signature
 
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _REQUIRED_METADATA_FIELDS = {
