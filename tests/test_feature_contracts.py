@@ -93,6 +93,18 @@ def test_rejects_feature_owned_by_another_product():
         )
 
 
+
+def test_rejects_feature_definition_owned_by_another_product():
+    foreign_definition = definition(
+        feature_id="fraudshield.device_novelty", product_id="FraudShield"
+    )
+    with pytest.raises(ValueError, match="owned by another product"):
+        validate_feature_vector(
+            vector(features={"fraudshield.device_novelty": 1.0}),
+            scope(),
+            {"fraudshield.device_novelty": foreign_definition},
+        )
+
 def test_missing_quarantine_feature_requires_quarantined_vector():
     with pytest.raises(ValueError, match="quarantined status"):
         validate_feature_vector(
