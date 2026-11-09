@@ -69,7 +69,7 @@ class DetectorContext(BaseModel):
     vector: FeatureVector
     trusted_scope: TrustedProductScope
     definitions: Mapping[str, FeatureDefinition]
-    baselines: tuple["BaselineSnapshot", ...] = ()
+    baselines: tuple[BaselineSnapshot, ...] = ()
 
 
 class ThresholdRule(BaseModel):
@@ -321,7 +321,7 @@ def run_detectors(
             if outcome.detector_id != detector.detector_id:
                 raise ValueError("detector returned an outcome with a mismatched ID")
             outcomes.append(outcome)
-        except Exception:
+        except Exception:  # noqa: BLE001 - isolate untrusted detector implementations
             outcomes.append(
                 DetectorOutcome(
                     detector_id=detector.detector_id,
