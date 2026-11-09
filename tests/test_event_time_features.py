@@ -7,7 +7,6 @@ from cybershield_ml.event_quality import EventQualityPolicy
 from cybershield_ml.event_time_features import aggregate_event_time_features
 from cybershield_ml.feature_contracts import FeatureDefinition
 
-
 BASE = datetime(2026, 11, 9, 10, 0, tzinfo=timezone.utc)
 
 
