@@ -332,3 +332,52 @@ def test_loader_requires_signature_and_keyring(tmp_path):
     save_model(train_model(frame, tenant_id="t1", contamination=0.15), frame, tmp_path)
     with pytest.raises(ValueError, match="signature file is required"):
         load_model(tmp_path, "t1", {"known": b"unused"})
+
+
+def test_signature_binds_exact_metadata_bytes(tmp_path, publisher_keyring):
+    frame = sample_features()
+    save_model(train_model(frame, tenant_id="t1", contamination=0.15), frame, tmp_path)
+    trusted = sign_test_model(tmp_path, publisher_keyring)
+    metadata_path = tmp_path / "model_metadata.json"
+    original = metadata_path.read_bytes()
+
+    # Reordering JSON keys preserves the parsed object but changes the signed bytes.
+    parsed = json.loads(original)
+    metadata_path.write_text(json.dumps(dict(reversed(list(parsed.items())))), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="signature verification failed"):
+        load_model(tmp_path, "t1", trusted)
+
+
+def test_signature_binds_metadata_whitespace_bytes(tmp_path, publisher_keyring):
+    frame = sample_features()
+    save_model(train_model(frame, tenant_id="t1", contamination=0.15), frame, tmp_path)
+    trusted = sign_test_model(tmp_path, publisher_keyring)
+    metadata_path = tmp_path / "model_metadata.json"
+    metadata_path.write_bytes(metadata_path.read_bytes() + b"\\n")
+
+    with pytest.raises(ValueError, match="signature verification failed"):
+        load_model(tmp_path, "t1", trusted)
+
+
+def test_signature_verification_uses_exact_key_id_without_fallback(tmp_path, publisher_keyring):
+    frame = sample_features()
+    save_model(train_model(frame, tenant_id="t1", contamination=0.15), frame, tmp_path)
+    trusted = sign_test_model(tmp_path, publisher_keyring)
+    signature_path = tmp_path / "model_signature.json"
+    document = json.loads(signature_path.read_text(encoding="utf-8"))
+    document["key_id"] = "cephas-test-2026:unknown"
+    signature_path.write_text(json.dumps(document), encoding="utf-8")
+
+    # Even when the same public key is configured under another ID, no fallback is allowed.
+    with pytest.raises(ValueError, match="not trusted"):
+        load_model(tmp_path, "t1", {"cephas-test-2026": trusted["cephas-test-2026"]})
+
+
+@pytest.mark.parametrize("key_id", ["", " leading", "trailing ", "bad\\nvalue", "x" * 129])
+def test_signing_rejects_malformed_key_ids(tmp_path, publisher_keyring, key_id):
+    frame = sample_features()
+    save_model(train_model(frame, tenant_id="t1", contamination=0.15), frame, tmp_path)
+    private_pem, _ = publisher_keyring
+    with pytest.raises(ValueError, match="key_id"):
+        sign_model(tmp_path, "t1", private_pem, key_id)
