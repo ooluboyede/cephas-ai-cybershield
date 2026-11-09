@@ -12,7 +12,8 @@ from cybershield_ml.events import SecurityEvent
 from cybershield_ml.features import FEATURE_COLUMNS, deduplicate_events, engineer_features
 from cybershield_ml.model import fingerprint, save_model, score, train_model
 from cybershield_ml.model import load_model as _load_model
-from cybershield_ml.signing import sign_model\nfrom cybershield_ml.trust_context import DeploymentTrustContext, TrustedPublisherKeyring
+from cybershield_ml.signing import sign_model
+from cybershield_ml.trust_context import DeploymentTrustContext, TrustedPublisherKeyring
 
 
 class MemoryReleaseStateStore:
