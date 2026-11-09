@@ -99,57 +99,59 @@ metadata bytes and artifact digest. A publisher must allocate monotonically incr
 sequences for each product release stream; do not reset the sequence when rotating keys
 or rebuilding a package.
 
-Model loading now requires a customer-supplied `ReleaseStateStore`. Its
-`accept_release(...)` operation must be an atomic, durable compare-and-set keyed by
-customer deployment, tenant and product. It must:
+Model loading now requires a customer-supplied release-state gate. For recovery
+protection, production deployments must compose the HTTPS anchor and PostgreSQL
+operational mirror using `AnchoredReleaseStateStore`. The release floor is keyed by
+`(tenant_id, deployment_id, product)`.
 
-- reject a sequence lower than the stored minimum;
-- treat the same sequence and same version as an idempotent reinstall;
-- reject reuse of one sequence for a different version;
-- persist the new accepted sequence before model deserialization;
-- be shared by all service instances and survive restart, failover and restore;
-- fail closed when the state store is unavailable.
+The repository includes:
+- `PostgresReleaseStateStore`: atomic PostgreSQL compare-and-set and floor lookup.
+- `HttpReleaseFloorAnchor`: HTTPS-only client with server certificate verification,
+  mandatory mutual TLS client authentication, scoped bearer token, redirect rejection
+  and bounded request timeout.
+- `AnchoredReleaseStateStore`: anchor-first advancement and fail-closed reconciliation.
+  A PostgreSQL floor below the anchor is repaired forward; a database floor above the
+  anchor blocks loading and requires recovery investigation.
+- `services/release_anchor/`: customer-operated threaded WSGI reference service,
+  independent PostgreSQL schema and deployment instructions. The service authorizes
+  bearer tokens against tenant/deployment/product scopes and records accepted updates
+  in an audit table in the same transaction as the floor change.
 
-The repository now includes a PostgreSQL DB-API adapter, `PostgresReleaseStateStore`,
-using one atomic `INSERT ... ON CONFLICT ... DO UPDATE ... WHERE ... RETURNING`
-statement keyed by `(tenant_id, product)`. The conditional update accepts a higher
-sequence or an idempotent repeat of the same sequence/version, and rejects lower
-sequences or same-sequence/different-version conflicts. The operation commits on
-acceptance and rolls back on rejection or operational failure.
+For existing application databases, review and apply
+`POSTGRES_RELEASE_STATE_MIGRATION_V2` under the customer's controlled migration
+process. The migration maps existing rows to deployment ID `default`; customers
+running multiple deployments must plan and verify the correct floor mapping before
+applying it. New databases use `POSTGRES_RELEASE_STATE_SCHEMA`.
 
-Provision the table through the customer's database migration process using
-`POSTGRES_RELEASE_STATE_SCHEMA`. Example with a customer-owned psycopg connection
-factory:
+The HTTPS anchor service must use a separate PostgreSQL database and independent
+administrative, backup and recovery boundary. Its runtime role must have only the
+required state-table SELECT/INSERT/UPDATE privileges and audit-table INSERT privilege;
+it must not have audit UPDATE, DELETE or TRUNCATE rights. Configure TLS client
+certificates and scoped bearer-token hashes through the customer's secrets and PKI
+systems. See `services/release_anchor/README.md` for deployment details.
 
-```python
-import psycopg
-from cybershield_ml.release_state import PostgresReleaseStateStore
+The anchor is advanced before the application database. If the anchor advances but
+the application database write fails, loading fails; the next attempt repairs the
+database forward from the anchor. If the application database is ahead of the anchor,
+the loader fails closed rather than trusting or automatically promoting database-only
+state. A first installation with both stores empty may establish the initial floor.
+A database with existing floor data and an unprovisioned anchor requires an explicit,
+audited bootstrap; it must not be silently initialized from the database.
 
-def customer_connection():
-    return psycopg.connect(customer_managed_dsn)
+The tests now include real PostgreSQL adapter tests for tenant/deployment/product
+scoping, concurrency, process-boundary persistence and normal stale-release rejection,
+plus anchor coordination tests for restored-old-database reconciliation, unavailable
+anchor, database-ahead-of-anchor, and partial-write recovery. Service authorization,
+scope checks and atomic audit insertion are covered with service-level tests.
 
-release_store = PostgresReleaseStateStore(customer_connection)
-```
-
-The connection factory, credentials, schema migration and database operations remain
-under customer control. The adapter uses DB-API cursor/commit/rollback/close methods;
-it does not create or manage customer infrastructure. The test suite includes a
-DB-API contract double to verify SQL predicates, tenant/product scoping, commit and
-rollback behavior. This is not a substitute for integration tests against a real
-PostgreSQL server or multi-instance concurrency/restart/backup-restore testing.
-
-An emergency rollback must not lower or silently reset the stored floor. It requires a
-separate customer-authorized, audited break-glass procedure that records the approver,
-reason, target artifact digest and resulting floor. That administrative workflow is not
-implemented by this ML library. The release sequence is a rollback control, not a
-substitute for publisher key revocation or tenant/database isolation.
-
-**Important limitation:** the PostgreSQL adapter and DB-API contract tests are implemented,
-but no live PostgreSQL integration/concurrency test has yet been run. Customer deployment
-still needs migration execution, connection-pool/HA configuration, restart and backup/restore
-validation, monitoring, access controls and an audited break-glass rollback procedure.
-These operational controls remain prerequisites for production certification.
-
+**Important limitation:** this is a reference implementation, not production
+certification. The service has not yet been validated against a live, separately
+administered anchor PostgreSQL instance with real TLS/mTLS certificates. Customer
+deployment still requires service HA, independent anchor backup/restore and failover
+drills, audit retention/export, token and certificate rotation/revocation, monitoring,
+network segmentation, load/concurrency testing and a documented break-glass procedure.
+The reference WSGI service must not be exposed without its TLS/mTLS listener and
+customer-specific operational hardening.
 
 ## Reproducible dependency installation
 
