@@ -225,7 +225,9 @@ a fake cursor:
 - Two concurrent installs using separate database connections cannot leave the stored
   sequence below the higher competing release.
 
-The current integration test establishes persistence across adapter/connection
-recreation; it is not a literal operating-system process restart test. Production
-acceptance still requires deployment-level restart/recovery and backup/restore
-validation using the customer's operational database environment.
+The integration suite now also starts a separate Python child process and verifies
+that it cannot install a stale release using only the shared PostgreSQL state. This
+checks persistence across a process boundary, in addition to fresh adapter instances
+and connections. It is still not a full service restart/recovery or backup/restore drill.
+Production acceptance requires those deployment-level exercises in the customer's
+operational database environment.
