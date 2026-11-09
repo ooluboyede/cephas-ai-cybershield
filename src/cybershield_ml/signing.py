@@ -33,6 +33,7 @@ def _signed_payload(directory: Path, metadata: dict) -> bytes:
         "algorithm": metadata["algorithm"],
         "tenant_id": metadata["tenant_id"],
         "training_scope": metadata["training_scope"],
+        "release_sequence": metadata["release_sequence"],
         "metadata_sha256": hashlib.sha256(metadata_path.read_bytes()).hexdigest(),
         "artifact_sha256": artifact_hash,
     }
