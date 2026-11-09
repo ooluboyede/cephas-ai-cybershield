@@ -33,9 +33,8 @@ class _NoRedirect(HTTPRedirectHandler):
 class HttpReleaseFloorAnchor:
     """HTTPS client for a customer-operated release-floor authority.
 
-    TLS certificate verification is mandatory. Optional mutual TLS client
-    certificates can be supplied for service-to-service authentication.
-    The bearer token must be scoped by the service to permitted deployments.
+    TLS certificate verification and mutual TLS client authentication are mandatory.
+    The bearer token must also be scoped by the service to permitted deployments.
     """
 
     def __init__(
@@ -53,8 +52,8 @@ class HttpReleaseFloorAnchor:
             raise ValueError("release-floor anchor URL must be an HTTPS origin/path without query")
         if not bearer_token or not bearer_token.strip():
             raise ValueError("a scoped release-floor anchor bearer token is required")
-        if (client_cert is None) != (client_key is None):
-            raise ValueError("client_cert and client_key must be supplied together")
+        if not client_cert or not client_key:
+            raise ValueError("mutual TLS client_cert and client_key are required")
         if timeout <= 0:
             raise ValueError("timeout must be positive")
         self._base_url = base_url.rstrip("/")
