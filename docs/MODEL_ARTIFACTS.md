@@ -73,3 +73,55 @@ The 0.3.3 regression suite additionally verifies that:
 - Signing rejects malformed key IDs, including empty values, whitespace, newline characters and identifiers longer than 128 characters.
 
 These tests demonstrate the behavior of this implementation; they do not by themselves establish that the reviewer's complete attack scenarios have been addressed. Gigabrute is asked to identify the concrete input/path they consider exploitable if either finding remains open.
+
+
+## Signed release sequencing and anti-rollback
+
+Every newly produced model artifact carries a positive integer `release_sequence` in
+`model_metadata.json`. The Ed25519 signature binds this sequence together with the
+metadata bytes and artifact digest. A publisher must allocate monotonically increasing
+sequences for each product release stream; do not reset the sequence when rotating keys
+or rebuilding a package.
+
+Model loading now requires a customer-supplied `ReleaseStateStore`. Its
+`accept_release(...)` operation must be an atomic, durable compare-and-set keyed by
+customer deployment, tenant and product. It must:
+
+- reject a sequence lower than the stored minimum;
+- treat the same sequence and same version as an idempotent reinstall;
+- reject reuse of one sequence for a different version;
+- persist the new accepted sequence before model deserialization;
+- be shared by all service instances and survive restart, failover and restore;
+- fail closed when the state store is unavailable.
+
+The repository defines the interface only. A production customer deployment must
+implement it using a transactional database or equivalent durable coordination store,
+with authenticated tenant context, uniqueness/locking or compare-and-set semantics,
+backups, access controls and an auditable administrative path. A process-local dictionary
+or in-memory cache is not a production implementation. The test suite's in-memory
+stand-in tests the contract; it is not evidence of a production database adapter.
+
+Example integration shape:
+
+```python
+from cybershield_ml.model import load_model
+from customer_platform.release_state import PostgresReleaseStateStore
+
+model = load_model(
+    "installed/model",
+    tenant_id=authenticated_tenant_id,
+    trusted_public_keys=trusted_publishers,
+    release_state_store=PostgresReleaseStateStore(customer_database),
+)
+```
+
+An emergency rollback must not lower or silently reset the stored floor. It requires a
+separate customer-authorized, audited break-glass procedure that records the approver,
+reason, target artifact digest and resulting floor. That administrative workflow is not
+implemented by this ML library. The release sequence is a rollback control, not a
+substitute for publisher key revocation or tenant/database isolation.
+
+**Important limitation:** the state-store interface and its test double are implemented
+here; a production PostgreSQL/customer deployment adapter, transactional concurrency
+tests against that adapter, backup/restore behavior and the break-glass workflow remain
+unimplemented and must be completed before production certification.
