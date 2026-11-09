@@ -143,7 +143,7 @@ def validate_feature_vector(
                 raise ValueError(f"feature {feature_id!r} must be boolean")
             continue
         if isinstance(value, bool) or not isinstance(value, (int, float)):
-            raise ValueError(f"feature {feature_id!r} must be numeric")
+            raise TypeError(f"feature {feature_id!r} must be numeric")
         if definition.value_type in ("count", "bytes") and (
             type(value) is not int or value < 0
         ):
