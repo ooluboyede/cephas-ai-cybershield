@@ -139,6 +139,14 @@ def test_rejects_out_of_range_and_non_finite_values():
         vector(features={"auth.failure_ratio": float("nan")})
 
 
+def test_enforces_feature_definition_window_duration():
+    five_minute_definition = definition(window_seconds=600)
+    with pytest.raises(ValueError, match="600-second window"):
+        validate_feature_vector(
+            vector(), scope(), {"auth.failure_ratio": five_minute_definition}
+        )
+
+
 def test_rejects_invalid_time_window():
     with pytest.raises(ValidationError, match="window_start"):
         vector(
