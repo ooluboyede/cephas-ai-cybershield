@@ -1,6 +1,8 @@
 name: Generate dependency lock
 
 on:
+  push:
+    branches: ["milestone/cybershield-0.3.3-cryptographic-model-signing"]
   workflow_dispatch:
 
 permissions:
