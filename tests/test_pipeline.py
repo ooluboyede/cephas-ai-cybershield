@@ -10,11 +10,12 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cybershield_ml.evaluation import evaluate
 from cybershield_ml.events import SecurityEvent
 from cybershield_ml.features import FEATURE_COLUMNS, deduplicate_events, engineer_features
-from cybershield_ml.model import fingerprint, load_model as _load_model, save_model, score, train_model
+from cybershield_ml.model import fingerprint, save_model, score, train_model
+from cybershield_ml.model import load_model as _load_model
 from cybershield_ml.signing import sign_model
 
 
-class TestReleaseStateStore:
+class MemoryReleaseStateStore:
     """Test-only stand-in; production deployments must provide durable shared storage."""
 
     def __init__(self):
@@ -34,7 +35,7 @@ class TestReleaseStateStore:
 
 def load_model(*args, **kwargs):
     """Use an isolated test store unless a test explicitly supplies persistent state."""
-    kwargs.setdefault("release_state_store", TestReleaseStateStore())
+    kwargs.setdefault("release_state_store", MemoryReleaseStateStore())
     return _load_model(*args, **kwargs)
 
 
