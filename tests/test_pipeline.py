@@ -354,7 +354,7 @@ def test_signature_binds_metadata_whitespace_bytes(tmp_path, publisher_keyring):
     save_model(train_model(frame, tenant_id="t1", contamination=0.15), frame, tmp_path)
     trusted = sign_test_model(tmp_path, publisher_keyring)
     metadata_path = tmp_path / "model_metadata.json"
-    metadata_path.write_bytes(metadata_path.read_bytes() + b"\\n")
+    metadata_path.write_bytes(metadata_path.read_bytes() + b"\n")
 
     with pytest.raises(ValueError, match="signature verification failed"):
         load_model(tmp_path, "t1", trusted)
