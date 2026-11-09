@@ -107,3 +107,49 @@ def test_receipt_rejects_invalid_signature():
     )
     with pytest.raises(ValueError, match="signature verification failed"):
         receipt.verify(candidate, public_pem)
+
+
+from cybershield_ml.release_witness import validate_checkpoint_transition
+
+
+def next_checkpoint(current, **overrides):
+    values = {
+        "release_sequence": current.release_sequence + 1,
+        "previous_checkpoint_sha256": current.checkpoint_sha256,
+        "operation_id": f"op-{current.release_sequence + 1}",
+    }
+    values.update(overrides)
+    return checkpoint(**values)
+
+
+def test_transition_accepts_genesis_and_exact_next_checkpoint():
+    genesis = checkpoint(release_sequence=1, previous_checkpoint_sha256=None, operation_id="op-1")
+    assert validate_checkpoint_transition(None, genesis) == "append"
+
+    current = checkpoint(release_sequence=44, previous_checkpoint_sha256="e" * 64, operation_id="op-44")
+    candidate = next_checkpoint(current)
+    assert validate_checkpoint_transition(current, candidate) == "append"
+
+
+def test_transition_allows_only_exact_current_head_as_idempotent_retry():
+    current = checkpoint(release_sequence=45, previous_checkpoint_sha256="e" * 64, operation_id="op-45")
+    assert validate_checkpoint_transition(current, current) == "idempotent"
+
+
+@pytest.mark.parametrize("overrides,match", [
+    ({"release_sequence": 44}, "stale or conflicting"),
+    ({"release_sequence": 47}, "advance by exactly one"),
+    ({"previous_checkpoint_sha256": "f" * 64}, "predecessor"),
+    ({"tenant_id": "tenant-b"}, "scope"),
+    ({"operation_id": "op-45", "release_version": "0.3.99"}, "operation_id"),
+])
+def test_transition_rejects_stale_forked_or_conflicting_candidate(overrides, match):
+    current = checkpoint(release_sequence=45, previous_checkpoint_sha256="e" * 64, operation_id="op-45")
+    candidate = next_checkpoint(current, **overrides)
+    with pytest.raises(ValueError, match=match):
+        validate_checkpoint_transition(current, candidate)
+
+
+def test_transition_rejects_non_genesis_initial_checkpoint():
+    with pytest.raises(ValueError, match="genesis"):
+        validate_checkpoint(None, checkpoint(release_sequence=2))
