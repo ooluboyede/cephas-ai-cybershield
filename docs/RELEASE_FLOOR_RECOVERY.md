@@ -1,6 +1,6 @@
 # Release-Floor Backup, Restore and Failover Security Gate
 
-Status: **design specification only**. No independent checkpoint adapter, recovery workflow, or customer-environment restore drill is implemented by this document.
+Status: **reference implementation in progress**. The repository now includes an HTTPS/mTLS anchor client, a customer-operated WSGI reference service, a separate anchor PostgreSQL schema, and a fail-closed anchor-first adapter. Live service/database/TLS deployment validation and independent customer recovery drills are not yet complete.
 
 ## Objective
 
@@ -10,11 +10,19 @@ The current `PostgresReleaseStateStore` is atomic during normal database operati
 
 ## Security decision
 
-Use a **customer-controlled, independently administered release-floor anchor** as the recovery authority. It must be durable, monotonic, tenant/product scoped, auditable, and outside the PostgreSQL backup/restore boundary being protected.
+Use a **customer-controlled, independently administered HTTPS release-floor service** as the recovery authority. The reference service requires mutual TLS plus a bearer token scoped to tenant/deployment, and persists monotonic floors by tenant/deployment/product in a separate PostgreSQL database. The anchor database must be outside the application PostgreSQL backup/restore and administrative boundary.
 
-The anchor may be implemented by a customer-selected service or storage system (for example, a separately administered append-only control-plane service or a hardware-backed monotonic record). This repository must not assume a specific cloud vendor, HSM, KMS, or hardware feature until a customer deployment target is selected and its guarantees are verified.
+The reference implementation is in services/release_anchor/; client and composition code are in src/cybershield_ml/release_anchor.py. The service uses a dedicated PostgreSQL database, mTLS, scoped bearer tokens, and an append-only audit table. This is a reference implementation, not a certified production service. Customer deployment must independently validate service HA, database durability, audit retention, backup/restore separation, certificate/token lifecycle and operational controls.
 
 A process-local dictionary, ordinary file on the same database host, second table in the same PostgreSQL cluster, or copy included in the same backup set is **not** an independent anchor.
+
+## Implemented reference components
+
+- HttpReleaseFloorAnchor: HTTPS-only client, server-certificate verification, mandatory mTLS client certificate, scoped bearer token, no redirects, bounded timeout and strict response validation.
+- services/release_anchor/app.py: threaded WSGI reference service requiring TLS client certificates and per-request bearer-token scope authorization.
+- services/release_anchor/schema.sql: separate tenant/deployment/product release floor and append-only audit table.
+- AnchoredReleaseStateStore: anchor-first state coordination; reconciles a lower PostgreSQL floor forward, refuses database-ahead-of-anchor ambiguity, and fails closed when the anchor is unavailable.
+- PostgreSQL application state now keys by (tenant_id, deployment_id, product). Existing customer databases require the controlled V2 migration in release_state.py; review deployment mapping before applying.
 
 ## Required anchor contract
 
@@ -91,4 +99,4 @@ This gate is not complete until all of the following are true:
 
 ## Current implementation boundary
 
-The repository currently has a PostgreSQL adapter with atomic per-tenant/product compare-and-set and PostgreSQL integration tests. That protects against stale concurrent installs while the database's current state remains intact. It does **not** yet protect against restoring an older PostgreSQL backup, and no independent anchor is implemented. Do not describe backup/restore anti-rollback as solved until this gate passes.
+The repository now has a PostgreSQL adapter with atomic per-tenant/deployment/product compare-and-set, an HTTPS/mTLS reference anchor service, an anchor client, and fail-closed composition tests. The reference tests simulate a restored lower database floor and prove reconciliation to the independent anchor. They do not yet prove live HTTPS/mTLS interoperability, a real separate anchor PostgreSQL instance, service failover, independent anchor backup/restore, immutable audit retention, or a customer-environment recovery drill. Do not describe production backup/restore anti-rollback as certified until those gates pass.
