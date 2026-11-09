@@ -11,10 +11,11 @@ import os
 import re
 import ssl
 
-import psycopg
 from socketserver import ThreadingMixIn
 from urllib.parse import unquote
 from wsgiref.simple_server import WSGIRequestHandler, WSGIServer, make_server
+
+import psycopg
 
 MAX_BODY_BYTES = 4096
 _SCOPE_COMPONENT_RE = re.compile(r"^[^/\\\\]{1,200}$")
