@@ -88,7 +88,7 @@ def evaluate_anomaly_scores(
         ),
         "alert_count": sum(predictions),
         "alert_rate": sum(predictions) / total,
-        "average_precision": average_precision_score(y_true, [-s for s in scores]),
+        "average_precision": (\n            average_precision_score(y_true, [-s for s in scores]) if positives else None\n        ),
         "roc_auc": roc_auc_score(y_true, [-s for s in scores]) if len(set(y_true)) == 2 else None,
         "interpretation": (
             "Anomaly scores are triage signals; they do not establish malicious activity."
