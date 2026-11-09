@@ -1,5 +1,4 @@
 import base64
-import hashlib
 
 import pytest
 from cryptography.hazmat.primitives import serialization
