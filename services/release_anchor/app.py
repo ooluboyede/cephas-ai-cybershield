@@ -10,6 +10,8 @@ import json
 import os
 import re
 import ssl
+
+import psycopg
 from socketserver import ThreadingMixIn
 from urllib.parse import unquote
 from wsgiref.simple_server import WSGIRequestHandler, WSGIServer, make_server
@@ -41,7 +43,7 @@ def _load_clients():
         if not isinstance(client.get("client_id"), str) or not client["client_id"].strip():
             raise RuntimeError("each anchor client requires a client_id")
         if not isinstance(client.get("scopes"), list):
-            raise RuntimeError("each anchor client requires a scopes list")
+            raise TypeError("each anchor client requires a scopes list")
         for scope in client["scopes"]:
             if (
                 not isinstance(scope, dict)
@@ -66,7 +68,7 @@ def _authenticate(environ, tenant_id, deployment_id, product):
     digest = hashlib.sha256(token.encode("utf-8")).hexdigest()
     try:
         clients = _load_clients()
-    except RuntimeError:
+    except (RuntimeError, TypeError):
         return None
     matched = None
     for expected_hash, client in clients.items():
@@ -85,10 +87,6 @@ def _authenticate(environ, tenant_id, deployment_id, product):
 
 
 def connect_database():
-    try:
-        import psycopg
-    except ImportError as exc:
-        raise RuntimeError("install psycopg[binary] for the anchor service") from exc
     dsn = os.environ.get("CEPHAS_ANCHOR_DATABASE_URL")
     if not dsn:
         raise RuntimeError("CEPHAS_ANCHOR_DATABASE_URL is required")
@@ -178,7 +176,7 @@ def application(environ, start_response):
             start_response, "200 OK",
             {"release_sequence": sequence, "version": version, "accepted": True},
         )
-    except Exception:
+    except (psycopg.Error, RuntimeError, OSError, ValueError):
         # Do not leak DSNs, SQL, tokens, or database errors to the caller.
         return _json_response(start_response, "503 Service Unavailable", {"error": "anchor_unavailable"})
 
