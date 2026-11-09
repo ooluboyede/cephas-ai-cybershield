@@ -7,6 +7,7 @@ through an unauthenticated reverse proxy or public plaintext listener.
 import hashlib
 import hmac
 import json
+import logging
 import os
 import re
 import ssl
@@ -17,6 +18,7 @@ from wsgiref.simple_server import WSGIRequestHandler, WSGIServer, make_server
 
 import psycopg
 
+logger = logging.getLogger("cephas.release_anchor")
 MAX_BODY_BYTES = 4096
 _SCOPE_COMPONENT_RE = re.compile(r"^[^/\\\\]{1,200}$")
 
@@ -177,18 +179,14 @@ def application(environ, start_response):
             start_response, "200 OK",
             {"release_sequence": sequence, "version": version, "accepted": True},
         )
-    except (psycopg.Error, RuntimeError, OSError, ValueError):
-        # Do not leak DSNs, SQL, tokens, or database errors to the caller.
+    except (psycopg.Error, RuntimeError, OSError, ValueError) as exc:
+        # Log only the exception class; never log DSNs, SQL parameters, or tokens.
+        logger.error("anchor operation failed (%s)", type(exc).__name__)
         return _json_response(start_response, "503 Service Unavailable", {"error": "anchor_unavailable"})
 
 
 class _ThreadedWSGIServer(ThreadingMixIn, WSGIServer):
     daemon_threads = True
-
-
-class _QuietHandler(WSGIRequestHandler):
-    def log_message(self, *_args):
-        return
 
 
 def serve():
@@ -203,7 +201,7 @@ def serve():
     context.load_verify_locations(cafile=client_ca)
     context.verify_mode = ssl.CERT_REQUIRED
     server = make_server(host, port, application, server_class=_ThreadedWSGIServer,
-                         handler_class=_QuietHandler)
+                         handler_class=WSGIRequestHandler)
     server.socket = context.wrap_socket(server.socket, server_side=True)
     server.serve_forever()
 
