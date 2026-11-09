@@ -15,11 +15,14 @@ jobs:
         with:
           ref: milestone/cybershield-0.3.3-cryptographic-model-signing
           fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
       - uses: astral-sh/setup-uv@v6
         with:
           version: "0.9.5"
-      - name: Regenerate lock with all extras
-        run: uv lock --python 3.11 --all-extras
+      - name: Regenerate lock
+        run: uv lock --python 3.11
       - name: Commit lock
         run: |
           git config user.name "github-actions[bot]"
