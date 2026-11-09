@@ -210,3 +210,22 @@ trusted identity provider and protecting keyring provisioning. This change does 
 implement PostgreSQL RLS, database tenant isolation, identity/MFA, or a production
 release-state adapter. Cross-tenant and cross-deployment tests are required before
 review closure.
+
+
+## Live PostgreSQL validation — GIGA-SEC-02
+
+CI runs the anti-rollback integration suite against an isolated PostgreSQL 16.4
+service container. The tests exercise the actual DB-API adapter and SQL, not only
+a fake cursor:
+
+- Persisted state is enforced by a new adapter instance and new database connection.
+- Same-sequence/same-version installation is idempotent; same-sequence/different-version
+  and lower-sequence attempts are rejected.
+- Tenant and product keys are independently scoped.
+- Two concurrent installs using separate database connections cannot leave the stored
+  sequence below the higher competing release.
+
+The current integration test establishes persistence across adapter/connection
+recreation; it is not a literal operating-system process restart test. Production
+acceptance still requires deployment-level restart/recovery and backup/restore
+validation using the customer's operational database environment.
