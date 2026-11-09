@@ -4,6 +4,8 @@ Set CYBERSHIELD_TEST_DATABASE_URL to a disposable PostgreSQL database. CI suppli
 an isolated PostgreSQL service container. These tests never use customer data.
 """
 import os
+import subprocess
+import sys
 from concurrent.futures import ThreadPoolExecutor
 from threading import Barrier
 
@@ -62,6 +64,47 @@ def test_release_state_persists_across_new_store_and_connection(postgres_store):
             tenant_id="tenant-persist", product="CyberShield", release_sequence=7, version="0.3.7"
         )
     assert read_state(dsn, "tenant-persist", "CyberShield") == (8, "0.3.8")
+
+
+def test_release_floor_survives_a_separate_python_process(postgres_store):
+    dsn = os.environ["CYBERSHIELD_TEST_DATABASE_URL"]
+    postgres_store.accept_release(
+        tenant_id="tenant-process-restart",
+        product="CyberShield",
+        release_sequence=31,
+        version="0.3.31",
+    )
+
+    # The child process has no access to the parent's adapter or in-memory state.
+    child_code = """
+import os
+import psycopg
+from cybershield_ml.release_state import PostgresReleaseStateStore
+
+dsn = os.environ["CYBERSHIELD_TEST_DATABASE_URL"]
+store = PostgresReleaseStateStore(lambda: psycopg.connect(dsn))
+try:
+    store.accept_release(
+        tenant_id="tenant-process-restart",
+        product="CyberShield",
+        release_sequence=30,
+        version="0.3.30",
+    )
+except ValueError as exc:
+    if "stale or conflicts" not in str(exc):
+        raise
+else:
+    raise SystemExit("stale release unexpectedly accepted")
+"""
+    subprocess.run(
+        [sys.executable, "-c", child_code],
+        check=True,
+        env=os.environ.copy(),
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
+    assert read_state(dsn, "tenant-process-restart", "CyberShield") == (31, "0.3.31")
 
 
 def test_same_release_is_idempotent_but_conflicting_version_is_rejected(postgres_store):
