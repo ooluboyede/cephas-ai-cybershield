@@ -46,7 +46,7 @@ def load_model(*args, **kwargs):
     kwargs.setdefault(
         "trusted_publisher_keyring",
         TrustedPublisherKeyring(
-            tenant_id=tenant_id, deployment_id="default", public_keys=public_keys or {}
+            tenant_id=tenant_id, deployment_id="default", public_keys=public_keys or {"test-placeholder": b"placeholder"}
         ),
     )
     return _load_model(*args, **kwargs)
