@@ -112,6 +112,13 @@ def validate_feature_vector(
     unknown = set(vector.features) - set(definitions)
     if unknown:
         raise ValueError(f"undefined features are not accepted: {sorted(unknown)}")
+    foreign = [
+        feature_id
+        for feature_id in vector.features
+        if definitions[feature_id].product_id != vector.product_id
+    ]
+    if foreign:
+        raise ValueError(f"features are owned by another product: {sorted(foreign)}")
 
     missing_quarantine_features = []
     for feature_id, definition in definitions.items():
