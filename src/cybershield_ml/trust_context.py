@@ -5,9 +5,9 @@ server-side authentication/session layer, never from request JSON or model metad
 The publisher keyring must be provisioned through a separate authenticated
 administrative channel and bound to the same tenant and deployment.
 """
+from collections.abc import Mapping
 from dataclasses import dataclass
 from types import MappingProxyType
-from collections.abc import Mapping
 
 
 @dataclass(frozen=True)
