@@ -11,12 +11,13 @@ from sklearn.ensemble import IsolationForest
 from . import FEATURE_SCHEMA_VERSION, MODEL_METADATA_SCHEMA_VERSION, __version__
 from .features import FEATURE_COLUMNS
 from .signing import verify_model_signature
+from .release_state import ReleaseStateStore
 
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _REQUIRED_METADATA_FIELDS = {
     "product", "version", "metadata_schema_version", "feature_schema_version",
     "algorithm", "tenant_id", "training_scope", "features", "training_rows",
-    "dataset_sha256", "artifact_sha256", "parameters", "warning",
+    "dataset_sha256", "artifact_sha256", "release_sequence", "parameters", "warning",
 }
 
 
@@ -86,10 +87,14 @@ def score(model, features: pd.DataFrame) -> pd.DataFrame:
     return result
 
 
-def save_model(model, features: pd.DataFrame, directory: str | Path):
+def save_model(
+    model, features: pd.DataFrame, directory: str | Path, release_sequence: int = 1
+):
     tenant_id = getattr(model, "cephas_tenant_id_", None)
     if not tenant_id:
         raise ValueError("refusing to save a model without verified tenant scope")
+    if isinstance(release_sequence, bool) or not isinstance(release_sequence, int) or release_sequence < 1:
+        raise ValueError("release_sequence must be a positive integer")
     if "tenant_id" not in features.columns or (
         not features.empty and not features["tenant_id"].eq(tenant_id).all()
     ):
@@ -116,6 +121,7 @@ def save_model(model, features: pd.DataFrame, directory: str | Path):
         "training_rows": len(features),
         "dataset_sha256": dataset_sha256,
         "artifact_sha256": artifact_sha256,
+        "release_sequence": release_sequence,
         "parameters": model.get_params(),
         "warning": "Anomaly is not proof of malicious activity; analyst review required.",
     }
@@ -156,6 +162,9 @@ def _read_and_validate_metadata(metadata_path: Path, tenant_id: str) -> dict:
     for field in ("dataset_sha256", "artifact_sha256"):
         if not isinstance(metadata[field], str) or not _SHA256_RE.fullmatch(metadata[field]):
             raise ValueError(f"model metadata field {field} is not a valid SHA-256 digest")
+    sequence = metadata["release_sequence"]
+    if isinstance(sequence, bool) or not isinstance(sequence, int) or sequence < 1:
+        raise ValueError("model release sequence must be a positive integer")
     if not isinstance(metadata["parameters"], dict) or not isinstance(metadata["warning"], str):
         raise ValueError("model metadata parameters or warning field is invalid")  # noqa: TRY004
     return metadata
@@ -165,6 +174,7 @@ def load_model(
     directory: str | Path,
     tenant_id: str,
     trusted_public_keys: dict[str, bytes | str],
+    release_state_store: ReleaseStateStore,
 ) -> IsolationForest:
     """Load a locally controlled model only after metadata and artifact checks pass.
 
@@ -175,6 +185,8 @@ def load_model(
     if not tenant_id or not tenant_id.strip():
         raise ValueError("tenant_id is required to load a tenant-scoped model")
     path = Path(directory)
+    if release_state_store is None:
+        raise ValueError("a durable customer release-state store is required")
     metadata = _read_and_validate_metadata(path / "model_metadata.json", tenant_id)
     verify_model_signature(path, metadata, trusted_public_keys)
     artifact_path = path / "isolation_forest.joblib"
@@ -183,7 +195,14 @@ def load_model(
     actual_sha256 = hashlib.sha256(artifact_path.read_bytes()).hexdigest()
     if actual_sha256 != metadata["artifact_sha256"]:
         raise ValueError("model artifact SHA-256 verification failed")
-    # Deserialization occurs only after the artifact hash has been checked.
+    # Atomic customer-side compare-and-set; reject rollback before deserialization.
+    release_state_store.accept_release(
+        tenant_id=tenant_id,
+        product=metadata["product"],
+        release_sequence=metadata["release_sequence"],
+        version=metadata["version"],
+    )
+    # Deserialization occurs only after signature, digest and anti-rollback checks.
     try:
         model = joblib.load(artifact_path)
     except Exception as exc:
