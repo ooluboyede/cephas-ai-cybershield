@@ -121,7 +121,8 @@ def save_model(
         "training_rows": len(features),
         "dataset_sha256": dataset_sha256,
         "artifact_sha256": artifact_sha256,
-        "release_sequence": release_sequence,\n        "deployment_id": deployment_id,
+        "release_sequence": release_sequence,
+        "deployment_id": deployment_id,
         "parameters": model.get_params(),
         "warning": "Anomaly is not proof of malicious activity; analyst review required.",
     }
@@ -165,7 +166,9 @@ def _read_and_validate_metadata(metadata_path: Path, tenant_id: str) -> dict:
     sequence = metadata["release_sequence"]
     if isinstance(sequence, bool) or not isinstance(sequence, int) or sequence < 1:
         raise ValueError("model release sequence must be a positive integer")
-    if not isinstance(metadata["deployment_id"], str) or not metadata["deployment_id"].strip():\n        raise ValueError("model deployment_id is invalid")\n    if not isinstance(metadata["parameters"], dict) or not isinstance(metadata["warning"], str):
+    if not isinstance(metadata["deployment_id"], str) or not metadata["deployment_id"].strip():
+        raise ValueError("model deployment_id is invalid")
+    if not isinstance(metadata["parameters"], dict) or not isinstance(metadata["warning"], str):
         raise ValueError("model metadata parameters or warning field is invalid")  # noqa: TRY004
     return metadata
 
