@@ -4,7 +4,11 @@ import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
-from cybershield_ml.release_witness import WitnessCheckpoint, WitnessReceipt
+from cybershield_ml.release_witness import (
+    WitnessCheckpoint,
+    WitnessReceipt,
+    validate_checkpoint_transition,
+)
 
 
 def checkpoint(**overrides):
@@ -107,9 +111,6 @@ def test_receipt_rejects_invalid_signature():
     )
     with pytest.raises(ValueError, match="signature verification failed"):
         receipt.verify(candidate, public_pem)
-
-
-from cybershield_ml.release_witness import validate_checkpoint_transition
 
 
 def next_checkpoint(current, **overrides):
