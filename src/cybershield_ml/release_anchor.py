@@ -6,10 +6,10 @@ This module never falls back to PostgreSQL when the HTTPS anchor is unavailable.
 
 import json
 import ssl
+from typing import Protocol
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlsplit
-from urllib.request import HTTPSHandler, HTTPRedirectHandler, Request, build_opener
-from typing import Protocol
+from urllib.request import HTTPRedirectHandler, HTTPSHandler, Request, build_opener
 
 
 class ReleaseFloorAnchor(Protocol):
@@ -103,7 +103,7 @@ class HttpReleaseFloorAnchor:
         if payload is None:
             return None
         if not isinstance(payload, dict):
-            raise RuntimeError("release-floor anchor response must be a JSON object")
+            raise TypeError("release-floor anchor response must be a JSON object")
         sequence, version = payload.get("release_sequence"), payload.get("version")
         if (
             isinstance(sequence, bool) or not isinstance(sequence, int) or sequence < 1
