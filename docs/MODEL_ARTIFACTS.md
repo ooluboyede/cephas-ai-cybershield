@@ -42,10 +42,26 @@ from cybershield_ml.model import load_model
 trusted_publishers = {
     "cephas-prod-2026": Path("trusted/cephas-model-signing-public.pem").read_bytes(),
 }
+from cybershield_ml.trust_context import DeploymentTrustContext, TrustedPublisherKeyring
+
+# These values must come from the host's verified identity/session layer
+# and separately authenticated customer key provisioning.
+context = DeploymentTrustContext(
+    tenant_id=verified_tenant_id,
+    deployment_id=verified_deployment_id,
+)
+keyring = TrustedPublisherKeyring(
+    tenant_id=context.tenant_id,
+    deployment_id=context.deployment_id,
+    public_keys=trusted_publishers,
+)
 model = load_model(
     "installed/model",
-    tenant_id="customer-tenant",
-    trusted_public_keys=trusted_publishers,
+    tenant_id=context.tenant_id,
+    trusted_public_keys=keyring.public_keys,
+    release_state_store=customer_release_state_store,
+    deployment_context=context,
+    trusted_publisher_keyring=keyring,
 )
 ```
 
