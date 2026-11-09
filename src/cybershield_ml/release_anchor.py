@@ -8,7 +8,7 @@ import json
 import ssl
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlsplit
-from urllib.request import HTTPRedirectHandler, Request, build_opener
+from urllib.request import HTTPSHandler, HTTPRedirectHandler, Request, build_opener
 from typing import Protocol
 
 
@@ -49,7 +49,7 @@ class HttpReleaseFloorAnchor:
         timeout: float = 5.0,
     ):
         parsed = urlsplit(base_url)
-        if parsed.scheme != "https" or not parsed.netloc or parsed.query or parsed.fragment:
+        if parsed.scheme != "https" or not parsed.netloc or parsed.username or parsed.password or parsed.query or parsed.fragment:
             raise ValueError("release-floor anchor URL must be an HTTPS origin/path without query")
         if not bearer_token or not bearer_token.strip():
             raise ValueError("a scoped release-floor anchor bearer token is required")
@@ -63,7 +63,7 @@ class HttpReleaseFloorAnchor:
         context = ssl.create_default_context(cafile=ca_bundle)
         if client_cert:
             context.load_cert_chain(client_cert, client_key)
-        self._opener = build_opener(_NoRedirect(), __import__("urllib.request").request.HTTPSHandler(context=context))
+        self._opener = build_opener(_NoRedirect(), HTTPSHandler(context=context))
 
     @staticmethod
     def _path(tenant_id: str, deployment_id: str, product: str) -> str:
