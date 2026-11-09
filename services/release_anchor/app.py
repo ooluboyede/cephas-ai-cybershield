@@ -11,11 +11,9 @@ import logging
 import os
 import re
 import ssl
-
 from socketserver import ThreadingMixIn
 from urllib.parse import unquote
 from wsgiref.simple_server import WSGIRequestHandler, WSGIServer, make_server
-
 import psycopg
 
 logger = logging.getLogger("cephas.release_anchor")
