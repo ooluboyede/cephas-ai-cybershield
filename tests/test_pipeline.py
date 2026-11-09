@@ -406,3 +406,38 @@ def test_signing_rejects_malformed_key_ids(tmp_path, publisher_keyring, key_id):
     private_pem, _ = publisher_keyring
     with pytest.raises(ValueError, match="key_id"):
         sign_model(tmp_path, "t1", private_pem, key_id)
+
+
+def test_loader_rejects_model_from_another_deployment(tmp_path, publisher_keyring):
+    frame = sample_features()
+    save_model(train_model(frame, tenant_id="t1", contamination=0.15), frame, tmp_path,
+               deployment_id="deployment-a")
+    trusted = sign_test_model(tmp_path, publisher_keyring)
+    with pytest.raises(ValueError, match="authenticated deployment"):
+        load_model(tmp_path, tenant_id="t1", trusted_public_keys=trusted)
+
+
+def test_loader_rejects_cross_tenant_publisher_keyring(tmp_path, publisher_keyring):
+    frame = sample_features()
+    save_model(train_model(frame, tenant_id="t1", contamination=0.15), frame, tmp_path)
+    trusted = sign_test_model(tmp_path, publisher_keyring)
+    with pytest.raises(ValueError, match="not scoped to the authenticated deployment"):
+        load_model(
+            tmp_path, tenant_id="t1", trusted_public_keys=trusted,
+            trusted_publisher_keyring=TrustedPublisherKeyring(
+                tenant_id="t2", deployment_id="default", public_keys=trusted
+            ),
+        )
+
+
+def test_loader_rejects_cross_deployment_publisher_keyring(tmp_path, publisher_keyring):
+    frame = sample_features()
+    save_model(train_model(frame, tenant_id="t1", contamination=0.15), frame, tmp_path)
+    trusted = sign_test_model(tmp_path, publisher_keyring)
+    with pytest.raises(ValueError, match="not scoped to the authenticated deployment"):
+        load_model(
+            tmp_path, tenant_id="t1", trusted_public_keys=trusted,
+            trusted_publisher_keyring=TrustedPublisherKeyring(
+                tenant_id="t1", deployment_id="deployment-other", public_keys=trusted
+            ),
+        )
