@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta, timezone
 
 import pytest
+
 from cybershield_ml.contracts import SecurityTelemetryEvent, TrustedProductScope
 from cybershield_ml.event_quality import EventQualityPolicy
 from cybershield_ml.event_time_features import aggregate_event_time_features
