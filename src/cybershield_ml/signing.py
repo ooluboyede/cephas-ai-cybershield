@@ -15,14 +15,18 @@ SIGNATURE_SCHEMA_VERSION = "1.0.0"
 _KEY_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 
 
-def _signed_payload(directory: Path, metadata: dict) -> bytes:
+def _signed_payload(directory: Path, metadata: dict, *, metadata_bytes=None, artifact_bytes=None) -> bytes:
     metadata_path = directory / "model_metadata.json"
     artifact_path = directory / "isolation_forest.joblib"
-    if metadata_path.is_symlink() or not metadata_path.is_file():
-        raise ValueError("model metadata must be a regular, non-symlink file")
-    if artifact_path.is_symlink() or not artifact_path.is_file():
-        raise ValueError("model artifact must be a regular, non-symlink file")
-    artifact_hash = hashlib.sha256(artifact_path.read_bytes()).hexdigest()
+    if metadata_bytes is None:
+        if metadata_path.is_symlink() or not metadata_path.is_file():
+            raise ValueError("model metadata must be a regular, non-symlink file")
+        metadata_bytes = metadata_path.read_bytes()
+    if artifact_bytes is None:
+        if artifact_path.is_symlink() or not artifact_path.is_file():
+            raise ValueError("model artifact must be a regular, non-symlink file")
+        artifact_bytes = artifact_path.read_bytes()
+    artifact_hash = hashlib.sha256(artifact_bytes).hexdigest()
     if artifact_hash != metadata.get("artifact_sha256"):
         raise ValueError("model artifact SHA-256 verification failed")
     payload = {
@@ -35,7 +39,7 @@ def _signed_payload(directory: Path, metadata: dict) -> bytes:
         "training_scope": metadata["training_scope"],
         "release_sequence": metadata["release_sequence"],
         "deployment_id": metadata["deployment_id"],
-        "metadata_sha256": hashlib.sha256(metadata_path.read_bytes()).hexdigest(),
+        "metadata_sha256": hashlib.sha256(metadata_bytes).hexdigest(),
         "artifact_sha256": artifact_hash,
     }
     return json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
@@ -86,17 +90,26 @@ def verify_model_signature(
     directory: str | Path,
     metadata: dict,
     trusted_public_keys: Mapping[str, bytes | str],
+    *,
+    metadata_bytes: bytes | None = None,
+    artifact_bytes: bytes | None = None,
+    signature_bytes: bytes | None = None,
 ) -> str:
     """Verify signature using a customer-provisioned publisher public-key allowlist."""
     if not trusted_public_keys:
         raise ValueError("a trusted publisher public-key ring is required")
     path = Path(directory)
     signature_path = path / SIGNATURE_FILE
-    if signature_path.is_symlink() or not signature_path.is_file():
-        raise ValueError("a regular, non-symlink publisher signature file is required")
+    if signature_bytes is None:
+        if signature_path.is_symlink() or not signature_path.is_file():
+            raise ValueError("a regular, non-symlink publisher signature file is required")
+        try:
+            signature_bytes = signature_path.read_bytes()
+        except OSError as exc:
+            raise ValueError("publisher signature document is unreadable or invalid JSON") from exc
     try:
-        document = json.loads(signature_path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        document = json.loads(signature_bytes.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise ValueError("publisher signature document is unreadable or invalid JSON") from exc
     if not isinstance(document, dict):
         raise TypeError("publisher signature document must be a JSON object")
@@ -117,7 +130,12 @@ def verify_model_signature(
     if not isinstance(public_key, Ed25519PublicKey):
         raise TypeError("trusted publisher key must use Ed25519")
     try:
-        public_key.verify(signature, _signed_payload(path, metadata))
+        public_key.verify(
+            signature,
+            _signed_payload(
+                path, metadata, metadata_bytes=metadata_bytes, artifact_bytes=artifact_bytes
+            ),
+        )
     except InvalidSignature as exc:
         raise ValueError("publisher signature verification failed") from exc
     return key_id
