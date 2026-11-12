@@ -394,7 +394,7 @@ def test_loader_rejects_modified_signature(tmp_path, publisher_keyring):
 def test_loader_requires_signature_and_keyring(tmp_path):
     frame = sample_features()
     save_model(train_model(frame, tenant_id="t1", contamination=0.15), frame, tmp_path)
-    with pytest.raises(ValueError, match="signature file is required"):
+    with pytest.raises(FileNotFoundError, match="signature file is required"):
         load_model(tmp_path, "t1", {"known": b"unused"})
 
 
