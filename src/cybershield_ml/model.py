@@ -246,6 +246,7 @@ def load_model(
     # Atomic customer-side compare-and-set; reject rollback before deserialization.
     release_state_store.accept_release(
         tenant_id=tenant_id,
+        deployment_id=deployment_context.deployment_id,
         product=metadata["product"],
         release_sequence=metadata["release_sequence"],
         version=metadata["version"],

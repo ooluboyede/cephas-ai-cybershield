@@ -23,8 +23,8 @@ class MemoryReleaseStateStore:
     def __init__(self):
         self.state = {}
 
-    def accept_release(self, *, tenant_id, product, release_sequence, version):
-        key = (tenant_id, product)
+    def accept_release(self, *, tenant_id, deployment_id, product, release_sequence, version):
+        key = (tenant_id, deployment_id, product)
         current = self.state.get(key)
         if current is not None:
             current_sequence, current_version = current
