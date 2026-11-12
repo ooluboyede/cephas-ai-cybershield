@@ -1,4 +1,5 @@
 import hashlib
+import io
 import json
 from datetime import datetime, timezone
 
@@ -246,6 +247,31 @@ def test_model_load_round_trip_and_tenant_scope(tmp_path, publisher_keyring):
     assert len(score(loaded, frame)) == len(frame)
     with pytest.raises(ValueError, match="requested tenant scope"):
         load_model(tmp_path, tenant_id="t2", trusted_public_keys=trusted)
+
+
+def test_loader_deserializes_exact_bytes_that_were_verified(tmp_path, monkeypatch, publisher_keyring):
+    import cybershield_ml.model as model_module
+
+    frame = sample_features()
+    save_model(train_model(frame, tenant_id="t1", contamination=0.15), frame, tmp_path)
+    trusted = sign_test_model(tmp_path, publisher_keyring)
+    artifact_path = tmp_path / "isolation_forest.joblib"
+    verified_bytes = artifact_path.read_bytes()
+    real_load = model_module.joblib.load
+    observed = {}
+
+    def replace_file_then_load(source):
+        # Simulate a path replacement after verification. Loading must still consume
+        # the already-verified bytes, not reopen the mutable filesystem path.
+        artifact_path.write_bytes(b"attacker-controlled replacement")
+        assert isinstance(source, io.BytesIO)
+        observed["loaded_bytes"] = source.getvalue()
+        return real_load(source)
+
+    monkeypatch.setattr(model_module.joblib, "load", replace_file_then_load)
+    loaded = load_model(tmp_path, tenant_id="t1", trusted_public_keys=trusted)
+    assert observed["loaded_bytes"] == verified_bytes
+    assert loaded.cephas_tenant_id_ == "t1"
 
 
 def test_loader_rejects_artifact_tampering_before_deserialization(tmp_path, monkeypatch, publisher_keyring):
