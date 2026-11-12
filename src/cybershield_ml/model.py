@@ -226,7 +226,12 @@ def load_model(
     if dict(trusted_public_keys) != dict(trusted_publisher_keyring.public_keys):
         raise ValueError("unscoped publisher keys cannot override the deployment keyring")
     artifact_bytes = _read_regular_file_bytes(path / "isolation_forest.joblib", "model artifact")
-    signature_bytes = _read_regular_file_bytes(path / "model_signature.json", "model signature")
+    try:
+        signature_bytes = _read_regular_file_bytes(path / "model_signature.json", "model signature")
+    except ValueError as exc:
+        if isinstance(exc.__cause__, FileNotFoundError):
+            raise ValueError("model signature file is required") from exc
+        raise
     verify_model_signature(
         path,
         metadata,
