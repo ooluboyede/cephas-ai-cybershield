@@ -1,6 +1,9 @@
 import hashlib
+import io
 import json
+import os
 import re
+import stat
 from pathlib import Path
 
 import joblib
@@ -10,12 +13,14 @@ from sklearn.ensemble import IsolationForest
 
 from . import FEATURE_SCHEMA_VERSION, MODEL_METADATA_SCHEMA_VERSION, __version__
 from .features import FEATURE_COLUMNS
+from .release_state import ReleaseStateStore
+from .signing import verify_model_signature
 
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _REQUIRED_METADATA_FIELDS = {
     "product", "version", "metadata_schema_version", "feature_schema_version",
     "algorithm", "tenant_id", "training_scope", "features", "training_rows",
-    "dataset_sha256", "artifact_sha256", "parameters", "warning",
+    "dataset_sha256", "artifact_sha256", "release_sequence", "deployment_id", "parameters", "warning",
 }
 
 
@@ -85,10 +90,14 @@ def score(model, features: pd.DataFrame) -> pd.DataFrame:
     return result
 
 
-def save_model(model, features: pd.DataFrame, directory: str | Path):
+def save_model(
+    model, features: pd.DataFrame, directory: str | Path, release_sequence: int = 1, deployment_id: str = "default"
+):
     tenant_id = getattr(model, "cephas_tenant_id_", None)
     if not tenant_id:
         raise ValueError("refusing to save a model without verified tenant scope")
+    if isinstance(release_sequence, bool) or not isinstance(release_sequence, int) or release_sequence < 1:
+        raise ValueError("release_sequence must be a positive integer")
     if "tenant_id" not in features.columns or (
         not features.empty and not features["tenant_id"].eq(tenant_id).all()
     ):
@@ -115,6 +124,8 @@ def save_model(model, features: pd.DataFrame, directory: str | Path):
         "training_rows": len(features),
         "dataset_sha256": dataset_sha256,
         "artifact_sha256": artifact_sha256,
+        "release_sequence": release_sequence,
+        "deployment_id": deployment_id,
         "parameters": model.get_params(),
         "warning": "Anomaly is not proof of malicious activity; analyst review required.",
     }
@@ -123,12 +134,25 @@ def save_model(model, features: pd.DataFrame, directory: str | Path):
     return metadata
 
 
-def _read_and_validate_metadata(metadata_path: Path, tenant_id: str) -> dict:
-    if metadata_path.is_symlink() or not metadata_path.is_file():
-        raise ValueError("model metadata must be a regular, non-symlink file")
+def _read_regular_file_bytes(file_path: Path, label: str) -> bytes:
+    """Read one regular file through a pinned descriptor; reject symlinks."""
+    flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0)
     try:
-        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        descriptor = os.open(file_path, flags)
+        with os.fdopen(descriptor, "rb") as stream:
+            if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
+                raise ValueError(f"{label} must be a regular, non-symlink file")
+            return stream.read()
+    except (OSError, ValueError) as exc:
+        if isinstance(exc, ValueError):
+            raise
+        raise ValueError(f"{label} is unreadable or is not a regular, non-symlink file") from exc
+
+
+def _read_and_validate_metadata(metadata_bytes: bytes, tenant_id: str) -> dict:
+    try:
+        metadata = json.loads(metadata_bytes.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise ValueError("model metadata is unreadable or invalid JSON") from exc
     if not isinstance(metadata, dict):
         raise ValueError("model metadata must be a JSON object")  # noqa: TRY004
@@ -155,31 +179,81 @@ def _read_and_validate_metadata(metadata_path: Path, tenant_id: str) -> dict:
     for field in ("dataset_sha256", "artifact_sha256"):
         if not isinstance(metadata[field], str) or not _SHA256_RE.fullmatch(metadata[field]):
             raise ValueError(f"model metadata field {field} is not a valid SHA-256 digest")
+    sequence = metadata["release_sequence"]
+    if isinstance(sequence, bool) or not isinstance(sequence, int) or sequence < 1:
+        raise ValueError("model release sequence must be a positive integer")
+    if not isinstance(metadata["deployment_id"], str) or not metadata["deployment_id"].strip():
+        raise ValueError("model deployment_id is invalid")
     if not isinstance(metadata["parameters"], dict) or not isinstance(metadata["warning"], str):
         raise ValueError("model metadata parameters or warning field is invalid")  # noqa: TRY004
     return metadata
 
 
-def load_model(directory: str | Path, tenant_id: str) -> IsolationForest:
+def load_model(
+    directory: str | Path,
+    tenant_id: str,
+    trusted_public_keys: dict[str, bytes | str],
+    release_state_store: ReleaseStateStore,
+    deployment_context,
+    trusted_publisher_keyring,
+) -> IsolationForest:
     """Load a locally controlled model only after metadata and artifact checks pass.
 
     Joblib uses Python serialization. Never load artifacts supplied by an untrusted party.
     The SHA-256 comparison detects artifact/metadata mismatch; it is not a digital signature
-    and does not establish publisher authenticity.
+    and does not establish publisher authenticity. A trusted Ed25519 signature is mandatory.
     """
     if not tenant_id or not tenant_id.strip():
         raise ValueError("tenant_id is required to load a tenant-scoped model")
+    from .trust_context import DeploymentTrustContext, TrustedPublisherKeyring
+    if not isinstance(deployment_context, DeploymentTrustContext):
+        raise TypeError("an authenticated deployment trust context is required")
+    if not isinstance(trusted_publisher_keyring, TrustedPublisherKeyring):
+        raise TypeError("a deployment-scoped trusted publisher keyring is required")
+    if deployment_context.tenant_id != tenant_id:
+        raise ValueError("deployment context tenant does not match requested tenant")
+    if (trusted_publisher_keyring.tenant_id, trusted_publisher_keyring.deployment_id) != (
+        deployment_context.tenant_id, deployment_context.deployment_id
+    ):
+        raise ValueError("publisher keyring is not scoped to the authenticated deployment")
     path = Path(directory)
-    metadata = _read_and_validate_metadata(path / "model_metadata.json", tenant_id)
-    artifact_path = path / "isolation_forest.joblib"
-    if artifact_path.is_symlink() or not artifact_path.is_file():
-        raise ValueError("model artifact must be a regular, non-symlink file")
-    actual_sha256 = hashlib.sha256(artifact_path.read_bytes()).hexdigest()
+    if release_state_store is None:
+        raise ValueError("a durable customer release-state store is required")
+    metadata_bytes = _read_regular_file_bytes(path / "model_metadata.json", "model metadata")
+    metadata = _read_and_validate_metadata(metadata_bytes, tenant_id)
+    if metadata["deployment_id"] != deployment_context.deployment_id:
+        raise ValueError("model metadata does not match the authenticated deployment")
+    if dict(trusted_public_keys) != dict(trusted_publisher_keyring.public_keys):
+        raise ValueError("unscoped publisher keys cannot override the deployment keyring")
+    artifact_bytes = _read_regular_file_bytes(path / "isolation_forest.joblib", "model artifact")
+    try:
+        signature_bytes = _read_regular_file_bytes(path / "model_signature.json", "model signature")
+    except ValueError as exc:
+        if isinstance(exc.__cause__, FileNotFoundError):
+            raise FileNotFoundError("model signature file is required") from exc
+        raise
+    verify_model_signature(
+        path,
+        metadata,
+        trusted_publisher_keyring.public_keys,
+        metadata_bytes=metadata_bytes,
+        artifact_bytes=artifact_bytes,
+        signature_bytes=signature_bytes,
+    )
+    actual_sha256 = hashlib.sha256(artifact_bytes).hexdigest()
     if actual_sha256 != metadata["artifact_sha256"]:
         raise ValueError("model artifact SHA-256 verification failed")
-    # Deserialization occurs only after the artifact hash has been checked.
+    # Atomic customer-side compare-and-set; reject rollback before deserialization.
+    release_state_store.accept_release(
+        tenant_id=tenant_id,
+        product=metadata["product"],
+        release_sequence=metadata["release_sequence"],
+        version=metadata["version"],
+    )
+    # Deserialization occurs only after signature, digest and anti-rollback checks.
     try:
-        model = joblib.load(artifact_path)
+        # Deserialize the exact immutable byte sequence whose digest and signature were verified.
+        model = joblib.load(io.BytesIO(artifact_bytes))
     except Exception as exc:
         raise ValueError("model artifact could not be deserialized") from exc
     if not isinstance(model, IsolationForest):
