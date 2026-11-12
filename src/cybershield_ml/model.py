@@ -1,6 +1,9 @@
 import hashlib
+import io
 import json
+import os
 import re
+import stat
 from pathlib import Path
 
 import joblib
@@ -131,12 +134,25 @@ def save_model(
     return metadata
 
 
-def _read_and_validate_metadata(metadata_path: Path, tenant_id: str) -> dict:
-    if metadata_path.is_symlink() or not metadata_path.is_file():
-        raise ValueError("model metadata must be a regular, non-symlink file")
+def _read_regular_file_bytes(file_path: Path, label: str) -> bytes:
+    """Read one regular file through a pinned descriptor; reject symlinks."""
+    flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0)
     try:
-        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        descriptor = os.open(file_path, flags)
+        with os.fdopen(descriptor, "rb") as stream:
+            if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
+                raise ValueError(f"{label} must be a regular, non-symlink file")
+            return stream.read()
+    except (OSError, ValueError) as exc:
+        if isinstance(exc, ValueError):
+            raise
+        raise ValueError(f"{label} is unreadable or is not a regular, non-symlink file") from exc
+
+
+def _read_and_validate_metadata(metadata_bytes: bytes, tenant_id: str) -> dict:
+    try:
+        metadata = json.loads(metadata_bytes.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise ValueError("model metadata is unreadable or invalid JSON") from exc
     if not isinstance(metadata, dict):
         raise ValueError("model metadata must be a JSON object")  # noqa: TRY004
@@ -203,16 +219,23 @@ def load_model(
     path = Path(directory)
     if release_state_store is None:
         raise ValueError("a durable customer release-state store is required")
-    metadata = _read_and_validate_metadata(path / "model_metadata.json", tenant_id)
+    metadata_bytes = _read_regular_file_bytes(path / "model_metadata.json", "model metadata")
+    metadata = _read_and_validate_metadata(metadata_bytes, tenant_id)
     if metadata["deployment_id"] != deployment_context.deployment_id:
         raise ValueError("model metadata does not match the authenticated deployment")
     if dict(trusted_public_keys) != dict(trusted_publisher_keyring.public_keys):
         raise ValueError("unscoped publisher keys cannot override the deployment keyring")
-    verify_model_signature(path, metadata, trusted_publisher_keyring.public_keys)
-    artifact_path = path / "isolation_forest.joblib"
-    if artifact_path.is_symlink() or not artifact_path.is_file():
-        raise ValueError("model artifact must be a regular, non-symlink file")
-    actual_sha256 = hashlib.sha256(artifact_path.read_bytes()).hexdigest()
+    artifact_bytes = _read_regular_file_bytes(path / "isolation_forest.joblib", "model artifact")
+    signature_bytes = _read_regular_file_bytes(path / "model_signature.json", "model signature")
+    verify_model_signature(
+        path,
+        metadata,
+        trusted_publisher_keyring.public_keys,
+        metadata_bytes=metadata_bytes,
+        artifact_bytes=artifact_bytes,
+        signature_bytes=signature_bytes,
+    )
+    actual_sha256 = hashlib.sha256(artifact_bytes).hexdigest()
     if actual_sha256 != metadata["artifact_sha256"]:
         raise ValueError("model artifact SHA-256 verification failed")
     # Atomic customer-side compare-and-set; reject rollback before deserialization.
@@ -224,7 +247,8 @@ def load_model(
     )
     # Deserialization occurs only after signature, digest and anti-rollback checks.
     try:
-        model = joblib.load(artifact_path)
+        # Deserialize the exact immutable byte sequence whose digest and signature were verified.
+        model = joblib.load(io.BytesIO(artifact_bytes))
     except Exception as exc:
         raise ValueError("model artifact could not be deserialized") from exc
     if not isinstance(model, IsolationForest):
