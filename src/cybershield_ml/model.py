@@ -230,7 +230,7 @@ def load_model(
         signature_bytes = _read_regular_file_bytes(path / "model_signature.json", "model signature")
     except ValueError as exc:
         if isinstance(exc.__cause__, FileNotFoundError):
-            raise ValueError("model signature file is required") from exc
+            raise FileNotFoundError("model signature file is required") from exc
         raise
     verify_model_signature(
         path,
