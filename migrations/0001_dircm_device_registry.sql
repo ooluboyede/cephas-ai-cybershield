@@ -60,3 +60,4 @@ DROP POLICY IF EXISTS dircm_match_candidates_tenant_policy ON dircm_match_candid
 CREATE POLICY dircm_match_candidates_tenant_policy ON dircm_match_candidates
     USING (tenant_id = current_setting('app.tenant_id', true))
     WITH CHECK (tenant_id = current_setting('app.tenant_id', true));
+
