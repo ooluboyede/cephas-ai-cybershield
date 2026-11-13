@@ -2,7 +2,7 @@
 
 ## Matrix
 
-The disposable PostgreSQL 16 CI environment provisions five distinct LOGIN identities, each with NOSUPERUSER, NOCREATEDB, NOCREATEROLE and NOINHERIT:
+The disposable PostgreSQL 16 CI environment provisions five separate LOGIN identities, each configured NOSUPERUSER, NOCREATEDB, NOCREATEROLE and NOINHERIT:
 
 | Principal boundary | Provisioned scope |
 |---|---|
@@ -12,14 +12,16 @@ The disposable PostgreSQL 16 CI environment provisions five distinct LOGIN ident
 | Tenant | tenant-b / deployment-a / test / cybershield / bu-a |
 | Product | tenant-a / deployment-a / test / payroll / bu-a |
 
-Each login is independently mapped by the database administrator to one exact row in `dirmc_runtime_principal_scope`. Each role receives only schema USAGE, association SELECT/INSERT, audit SELECT and EXECUTE on the scope-check function. No role is granted role membership, BYPASSRLS, table ownership, mapping-table access, schema CREATE or audit INSERT.
+Each login is independently mapped by the database administrator to one exact row in `dirmc_runtime_principal_scope`. Each role receives only schema USAGE, association SELECT/INSERT, audit SELECT and EXECUTE on the scope-check function. No matrix role is granted membership in another matrix role, BYPASSRLS, table ownership, mapping-table access, schema CREATE or audit INSERT.
 
 ## Assertions
 
-The matrix validator logs in separately as every principal, writes and reads its own scoped association, then attempts every other principal's exact scope. Every cross-principal read must return no rows; every forged-scope write must be rejected by PostgreSQL RLS. It also verifies that no matrix login inherits another matrix role, so SET ROLE cannot be used to impersonate a different identity.
+The validator logs in separately as every principal, writes and reads its own scoped association, then attempts every other principal's exact scope. Every cross-principal read must return no rows; every forged-scope write must be rejected by PostgreSQL RLS.
+
+It queries role memberships specifically among the five matrix identities and attempts `SET ROLE` to every peer identity from each login. Every peer-role switch must fail. PostgreSQL predefined roles outside the matrix are not incorrectly treated as customer matrix identities; the test explicitly rejects membership or switching to any other provisioned matrix login.
 
 This tests the database enforcement boundary, not just application-level scope validation. It does not prove security against database superusers, trusted migration owners, compromised credentials, a misconfigured connection proxy, or a customer application that authenticates the wrong user.
 
 ## Production boundary
 
-The matrix is disposable CI evidence. Customer deployment still requires independently provisioned login identities or a trusted DB proxy that preserves authenticated principal identity, tested connection-pool reset behaviour, TLS/mTLS, least-privilege grants, and customer security review. Database audit rows remain in the same trust domain; independent immutable witness remains a separate production gate. Device decisions remain human-reviewed recommendations; no automatic blocking is introduced.
+The matrix is disposable CI evidence. Customer deployment still requires independently provisioned login identities or a trusted DB proxy that preserves authenticated principal identity, tested connection-pool reset behaviour, TLS/mTLS, least-privilege grants and customer security review. Database audit rows remain in the same trust domain; independent immutable witness remains a separate production gate. Device decisions remain human-reviewed recommendations; no automatic blocking is introduced.
