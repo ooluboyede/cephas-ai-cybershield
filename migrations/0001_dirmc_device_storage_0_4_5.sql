@@ -117,6 +117,7 @@ BEGIN
     RAISE EXCEPTION 'DIRMC audit records are append-only';
 END;
 $dirmc$;
+REVOKE ALL ON FUNCTION public.dirmc_reject_audit_mutation() FROM PUBLIC;
 
 DROP TRIGGER IF EXISTS dirmc_audit_no_update
 ON public.dirmc_device_association_audit;
@@ -229,5 +230,3 @@ WITH CHECK (
 -- TO dirmc_tenant_a_runtime;
 -- GRANT SELECT, INSERT ON public.dirmc_device_fraud_associations TO dirmc_tenant_a_runtime;
 -- GRANT SELECT ON public.dirmc_device_association_audit TO dirmc_tenant_a_runtime;
--- GRANT USAGE, SELECT ON SEQUENCE public.dirmc_device_association_audit_audit_id_seq
--- TO dirmc_tenant_a_runtime;
