@@ -3,6 +3,8 @@
 SQLite is an initial single-node reference adapter. Production multi-node deployments
 must use a customer-managed database adapter with equivalent constraints and isolation.
 """
+from __future__ import annotations
+
 import hashlib
 import json
 import os
