@@ -39,7 +39,7 @@ class PostgresDeviceIdentityRegistry(DeviceIdentityRegistry):
         try:
             with connection.cursor() as cursor:
                 self._set_tenant_context(cursor, tenant_id)
-                lock_key = "\x00".join((tenant_id, source_id, identifier_type, identifier_digest))
+                lock_key = f"{tenant_id}\x00{source_id}\x00{identifier_type}\x00{identifier_digest}"
                 cursor.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))", (lock_key,))
                 cursor.execute(
                     """
