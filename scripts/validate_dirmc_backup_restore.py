@@ -1,7 +1,8 @@
 """Exercise DIRMC PostgreSQL durability and logical backup/restore in disposable CI.
 
+Uses the matching PostgreSQL 16 client tools from the postgres:16 container,
+avoiding accidental cross-major-version pg_dump/pg_restore incompatibility.
 This is destructive to the named restore database and is not a customer operation.
-It refuses non-local hosts and non-CI database names.
 """
 from __future__ import annotations
 
@@ -26,24 +27,42 @@ ADMIN_DSN = os.environ.get(
 )
 RUNTIME_DSN = os.environ["CEPHAS_DIRMC_TEST_DSN"]
 TENANT = os.environ["CEPHAS_DIRMC_TEST_TENANT"]
+ADMIN = conninfo_to_dict(ADMIN_DSN)
 RUNTIME_ROLE = conninfo_to_dict(RUNTIME_DSN)["user"]
 RESTORE_DATABASE = "dirmc_restore_validation"
+POSTGRES_CLIENT_IMAGE = os.environ.get("CEPHAS_POSTGRES_CLIENT_IMAGE", "postgres:16")
 
 
 def require_disposable_local_database() -> None:
-    admin = conninfo_to_dict(ADMIN_DSN)
-    if admin.get("dbname") != "postgres":
+    if ADMIN.get("dbname") != "postgres":
         raise RuntimeError("refusing backup/restore test unless admin DSN targets postgres")
-    if admin.get("host") not in {"localhost", "127.0.0.1", "::1"}:
+    if ADMIN.get("host") not in {"localhost", "127.0.0.1", "::1"}:
         raise RuntimeError("refusing backup/restore test against a non-local database")
     if conninfo_to_dict(RUNTIME_DSN).get("dbname") != "postgres":
         raise RuntimeError("runtime DSN must target the disposable postgres CI database")
+    if not ADMIN.get("user") or not ADMIN.get("password"):
+        raise RuntimeError("admin DSN must supply a database user and password")
 
 
 def runtime_dsn(database: str) -> str:
     values = conninfo_to_dict(RUNTIME_DSN)
     values["dbname"] = database
     return make_conninfo(**values)
+
+
+def run_pg_tool(tool: str, directory: str, *arguments: str) -> None:
+    # The job runner has Docker available. --network host lets the matching
+    # postgres:16 client connect to the disposable local PostgreSQL 16 service.
+    command = [
+        "docker", "run", "--rm", "--network", "host",
+        "--volume", f"{directory}:/backup",
+        "--env", f"PGPASSWORD={ADMIN['password']}",
+        "--env", f"PGUSER={ADMIN['user']}",
+        "--env", "PGHOST=127.0.0.1",
+        "--env", f"PGPORT={ADMIN.get('port', '5432')}",
+        POSTGRES_CLIENT_IMAGE, tool, *arguments,
+    ]
+    subprocess.run(command, check=True)
 
 
 def grant_runtime_access(connection: psycopg.Connection) -> None:
@@ -94,20 +113,17 @@ def main() -> None:
     source_store = PostgresDeviceAssociationStore(lambda: psycopg.connect(RUNTIME_DSN))
     assert source_store.append(scope, item) is True
 
-    # A new connection after the writer has closed proves committed durability
-    # across process/connection restart rather than connection-local state.
+    # A fresh connection proves committed durability beyond connection-local state.
     restarted_store = PostgresDeviceAssociationStore(lambda: psycopg.connect(RUNTIME_DSN))
     assert len(restarted_store.list_for_device(
         scope, product_id="cybershield", device_key=device_key
     )) == 1
 
-    dump_path: Path
     with tempfile.TemporaryDirectory(prefix="dirmc-backup-") as directory:
         dump_path = Path(directory) / "dirmc.dump"
-        subprocess.run(
-            ["pg_dump", "--format=custom", "--no-owner", "--no-privileges",
-             "--dbname", ADMIN_DSN, "--file", str(dump_path)],
-            check=True,
+        run_pg_tool(
+            "pg_dump", directory, "--format=custom", "--no-owner", "--no-privileges",
+            "--dbname=postgres", "--file=/backup/dirmc.dump",
         )
         with psycopg.connect(ADMIN_DSN, autocommit=True) as admin:
             admin.execute(
@@ -118,13 +134,14 @@ def main() -> None:
             admin.execute(
                 sql.SQL("CREATE DATABASE {}").format(sql.Identifier(RESTORE_DATABASE))
             )
-        restored_admin_dsn = make_conninfo(
-            **{**conninfo_to_dict(ADMIN_DSN), "dbname": RESTORE_DATABASE}
+        run_pg_tool(
+            "pg_restore", directory, "--exit-on-error", "--no-owner",
+            "--no-privileges", "--dbname=" + RESTORE_DATABASE, "/backup/dirmc.dump",
         )
-        subprocess.run(
-            ["pg_restore", "--exit-on-error", "--no-owner", "--no-privileges",
-             "--dbname", restored_admin_dsn, str(dump_path)],
-            check=True,
+        if not dump_path.is_file() or dump_path.stat().st_size == 0:
+            raise RuntimeError("PostgreSQL 16 backup archive was not created")
+        restored_admin_dsn = make_conninfo(
+            **{**ADMIN, "dbname": RESTORE_DATABASE}
         )
         with psycopg.connect(restored_admin_dsn, autocommit=True) as restored_admin:
             grant_runtime_access(restored_admin)
@@ -136,8 +153,6 @@ def main() -> None:
     )
     assert [record.case_id for record in restored_records] == [case_id]
 
-    # The restored trigger must still atomically generate an audit row for a
-    # post-restore insert, and a fresh connection must read it.
     post_restore_item = item.model_copy(
         update={"case_id": f"post-restore-{uuid4().hex}"}
     )
@@ -160,12 +175,10 @@ def main() -> None:
     finally:
         verify_connection.close()
 
-    # Restored RLS remains fail-closed for a scope not provisioned to this login.
     other_scope = scope.model_copy(update={"business_unit_id": "bu-unmapped"})
     assert restored_store.list_for_device(
         other_scope, product_id="cybershield", device_key=device_key
     ) == ()
-
     print("DIRMC PostgreSQL restart, backup/restore, trigger and restored-RLS checks passed")
 
 
