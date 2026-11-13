@@ -13,10 +13,10 @@ NOW = datetime(2026, 11, 13, 8, 0, tzinfo=timezone.utc)
 DEVICE = "hmac-sha256:v1:" + "c" * 64
 
 
-def scope(tenant="tenant-a", business_unit="bu-a"):
+def scope(tenant="tenant-a", business_unit="bu-a", deployment="deployment-a"):
     return TrustedProductScope(
         tenant_id=tenant,
-        deployment_id="deployment-a",
+        deployment_id=deployment,
         environment="test",
         allowed_products=frozenset({"cybershield"}),
         business_unit_id=business_unit,
@@ -141,10 +141,39 @@ def test_postgres_live_rls_idempotency_and_concurrency():
             )
     denied_connection.close()
 
+    # A valid-looking caller scope is still rejected by RLS unless the
+    # authenticated database login has an exact principal-to-scope mapping.
     other_bu_scope = scope(tenant, business_unit="bu-b")
     assert store.list_for_device(
         other_bu_scope, product_id="cybershield", device_key=DEVICE
     ) == ()
+    other_tenant_scope = scope("tenant-b")
+    assert store.list_for_device(
+        other_tenant_scope, product_id="cybershield", device_key=DEVICE
+    ) == ()
+    other_deployment_scope = scope(tenant, deployment="deployment-b")
+    assert store.list_for_device(
+        other_deployment_scope, product_id="cybershield", device_key=DEVICE
+    ) == ()
+
+    with pytest.raises(psycopg.errors.InsufficientPrivilege):
+        store.append(other_tenant_scope, association("tenant-b", "cross-tenant-write"))
+    with pytest.raises(psycopg.errors.InsufficientPrivilege):
+        store.append(
+            other_deployment_scope,
+            DeviceFraudAssociation(
+                tenant_id=tenant,
+                deployment_id="deployment-b",
+                environment="test",
+                product_id="cybershield",
+                business_unit_id="bu-a",
+                device_key=DEVICE,
+                case_id="cross-deployment-write",
+                association_status="confirmed",
+                evidence_ref="evidence-1",
+                occurred_at=NOW,
+            ),
+        )
 
     with pytest.raises(ValueError, match="outside the authenticated scope"):
         store.append(trusted_scope, association(tenant="different-tenant", case_id="case-2"))
