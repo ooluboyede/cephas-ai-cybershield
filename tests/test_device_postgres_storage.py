@@ -103,6 +103,43 @@ def test_postgres_live_rls_idempotency_and_concurrency():
     assert len(records) == 1
     assert records[0].case_id == case_id
 
+    # The database trigger, not the application adapter, must create exactly
+    # one audit record for the winning association insert.
+    audit_connection = psycopg.connect(dsn)
+    try:
+        with audit_connection.transaction(), audit_connection.cursor() as cursor:
+            PostgresDeviceAssociationStore._set_scope(cursor, trusted_scope)
+            cursor.execute(
+                """SELECT COUNT(*) FROM dirmc_device_association_audit
+                   WHERE tenant_id=%s AND deployment_id=%s AND environment=%s
+                   AND product_id=%s AND business_unit_id=%s
+                   AND device_key=%s AND case_id=%s""",
+                (
+                    tenant, "deployment-a", "test", "cybershield", "bu-a",
+                    DEVICE, case_id,
+                ),
+            )
+            assert cursor.fetchone()[0] == 1
+    finally:
+        audit_connection.close()
+
+    # Runtime login must not be able to fabricate audit-only records.
+    denied_connection = psycopg.connect(dsn)
+    with pytest.raises(psycopg.errors.InsufficientPrivilege):
+        with denied_connection.transaction(), denied_connection.cursor() as cursor:
+            PostgresDeviceAssociationStore._set_scope(cursor, trusted_scope)
+            cursor.execute(
+                """INSERT INTO dirmc_device_association_audit (
+                    tenant_id, deployment_id, environment, product_id,
+                    business_unit_id, device_key, case_id, action, record_sha256
+                ) VALUES (%s,%s,%s,%s,%s,%s,%s,'association_inserted',%s)""",
+                (
+                    tenant, "deployment-a", "test", "cybershield", "bu-a",
+                    DEVICE, f"audit-forgery-{case_id}", "0" * 64,
+                ),
+            )
+    denied_connection.close()
+
     other_bu_scope = scope(tenant, business_unit="bu-b")
     assert store.list_for_device(
         other_bu_scope, product_id="cybershield", device_key=DEVICE
