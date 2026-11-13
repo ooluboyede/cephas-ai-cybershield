@@ -15,6 +15,10 @@ def dircm_database():
 
     with psycopg.connect(dsn) as connection:
         connection.execute(POSTGRES_DIRCM_SCHEMA)
+        connection.execute("""
+            REVOKE ALL ON dircm_devices, dircm_verified_identifiers, dircm_match_candidates
+            FROM dircm_test_app
+        """)
         connection.execute("DROP ROLE IF EXISTS dircm_test_app")
         connection.execute("CREATE ROLE dircm_test_app NOLOGIN")
         connection.execute("""
