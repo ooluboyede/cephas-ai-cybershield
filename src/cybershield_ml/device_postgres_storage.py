@@ -1,7 +1,7 @@
-"""PostgreSQL DIRMC storage adapter using caller-supplied psycopg connection factory.
+"""PostgreSQL DIRMC adapter with explicit connection-pool release support.
 
-The factory must return a fresh connection to the customer-managed database. The
-application must construct TrustedProductScope only from authenticated server context.
+Scopes are applied transaction-locally. The application must derive
+TrustedProductScope from authenticated server context, never request payloads.
 """
 from __future__ import annotations
 
@@ -19,10 +19,20 @@ _DEVICE_KEY = re.compile(r"^hmac-sha256:v[1-9][0-9]*:[a-f0-9]{64}$")
 
 
 class PostgresDeviceAssociationStore:
-    """Customer-managed PostgreSQL adapter; transaction-local scope drives RLS."""
+    """Customer-managed PostgreSQL adapter; transaction-local scope drives RLS.
 
-    def __init__(self, connection_factory: Callable[[], Any]):
+    For psycopg_pool, pass `pool.getconn` as connection_factory and
+    `pool.putconn` as connection_releaser. The releaser must return a
+    transaction-idle connection to a pool configured with a safe reset policy.
+    """
+
+    def __init__(
+        self,
+        connection_factory: Callable[[], Any],
+        connection_releaser: Callable[[Any], None] | None = None,
+    ):
         self._connection_factory = connection_factory
+        self._connection_releaser = connection_releaser or (lambda connection: connection.close())
 
     @staticmethod
     def _set_scope(cursor: Any, scope: TrustedProductScope) -> None:
@@ -69,7 +79,8 @@ class PostgresDeviceAssociationStore:
         canonical, digest = self._canonical(item)
         connection = self._connection_factory()
         try:
-            with connection.transaction(), connection.cursor() as cursor:
+            with connection.transaction():
+                with connection.cursor() as cursor:
                     self._set_scope(cursor, scope)
                     cursor.execute(
                         """INSERT INTO dirmc_device_fraud_associations (
@@ -100,7 +111,9 @@ class PostgresDeviceAssociationStore:
                         )
                         existing = cursor.fetchone()
                         if existing is None:
-                            raise RuntimeError("conflicting association exists outside visible RLS scope")
+                            raise RuntimeError(
+                                "conflicting association exists outside visible RLS scope"
+                            )
                         existing_payload = existing[0]
                         if isinstance(existing_payload, str):
                             existing_payload = json.loads(existing_payload)
@@ -111,7 +124,7 @@ class PostgresDeviceAssociationStore:
                         return False
                     return True
         finally:
-            connection.close()
+            self._connection_releaser(connection)
 
     def list_for_device(
         self, scope: TrustedProductScope, *, product_id: str, device_key: str
@@ -122,7 +135,8 @@ class PostgresDeviceAssociationStore:
             raise ValueError("device key must be a versioned HMAC-SHA256 pseudonym")
         connection = self._connection_factory()
         try:
-            with connection.transaction(), connection.cursor() as cursor:
+            with connection.transaction():
+                with connection.cursor() as cursor:
                     self._set_scope(cursor, scope)
                     cursor.execute(
                         """SELECT record_json FROM dirmc_device_fraud_associations
@@ -142,4 +156,4 @@ class PostgresDeviceAssociationStore:
                         for row in rows
                     )
         finally:
-            connection.close()
+            self._connection_releaser(connection)
