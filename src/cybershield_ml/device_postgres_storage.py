@@ -69,8 +69,7 @@ class PostgresDeviceAssociationStore:
         canonical, digest = self._canonical(item)
         connection = self._connection_factory()
         try:
-            with connection.transaction():
-                with connection.cursor() as cursor:
+            with connection.transaction(), connection.cursor() as cursor:
                     self._set_scope(cursor, scope)
                     cursor.execute(
                         """INSERT INTO dirmc_device_fraud_associations (
@@ -134,8 +133,7 @@ class PostgresDeviceAssociationStore:
             raise ValueError("device key must be a versioned HMAC-SHA256 pseudonym")
         connection = self._connection_factory()
         try:
-            with connection.transaction():
-                with connection.cursor() as cursor:
+            with connection.transaction(), connection.cursor() as cursor:
                     self._set_scope(cursor, scope)
                     cursor.execute(
                         """SELECT record_json FROM dirmc_device_fraud_associations
