@@ -1,6 +1,6 @@
+import sqlite3
 from datetime import datetime, timedelta, timezone
 
-import sqlite3
 import pytest
 
 from cybershield_ml.contracts import TrustedProductScope
