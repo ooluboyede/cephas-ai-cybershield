@@ -134,7 +134,7 @@ def main() -> None:
                      AND granted_role.rolname LIKE 'dirmc_ci_matrix_%%'""",
                 (role,),
             ).fetchall()
-            assert memberships == (), (
+            assert memberships == [], (
                 f"{role} has matrix-role memberships: {memberships}"
             )
             for target_role in MATRIX_ROLES - {role}:
