@@ -126,10 +126,13 @@ def test_postgres_live_rls_idempotency_and_concurrency():
 
     # Runtime login must not be able to fabricate audit-only records.
     denied_connection = psycopg.connect(dsn)
-    with pytest.raises(psycopg.errors.InsufficientPrivilege):
-        with denied_connection.transaction(), denied_connection.cursor() as cursor:
-            PostgresDeviceAssociationStore._set_scope(cursor, trusted_scope)
-            cursor.execute(
+    with (
+        pytest.raises(psycopg.errors.InsufficientPrivilege),
+        denied_connection.transaction(),
+        denied_connection.cursor() as cursor,
+    ):
+        PostgresDeviceAssociationStore._set_scope(cursor, trusted_scope)
+        cursor.execute(
                 """INSERT INTO dirmc_device_association_audit (
                     tenant_id, deployment_id, environment, product_id,
                     business_unit_id, device_key, case_id, action, record_sha256
