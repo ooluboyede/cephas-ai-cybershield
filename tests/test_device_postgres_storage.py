@@ -1,7 +1,6 @@
 import os
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
-from uuid import uuid4
 
 import pytest
 
@@ -79,16 +78,18 @@ def test_postgres_live_rls_idempotency_and_concurrency():
         pytest.skip("requires customer-provisioned PostgreSQL test database")
     psycopg = pytest.importorskip("psycopg")
 
-    tenant = f"dirmc-test-{uuid4().hex}"
+    tenant = os.environ.get("CEPHAS_DIRMC_TEST_TENANT")
+    if not tenant:
+        pytest.skip("requires a pre-provisioned tenant scope for the dedicated test login")
     trusted_scope = scope(tenant)
     item = association(tenant, "case-1")
 
     def make_store():
         return PostgresDeviceAssociationStore(lambda: psycopg.connect(dsn))
 
-    # The database administrator must pre-provision this login principal's exact
-    # tenant/deployment/environment/product/BU row in dirmc_runtime_principal_scope.
-    # The DSN must authenticate as that dedicated principal, not a table owner.
+    # The database administrator must pre-provision CEPHAS_DIRMC_TEST_TENANT for
+    # this dedicated login in dirmc_runtime_principal_scope. The DSN must authenticate
+    # as that login, not a table owner.
     store = make_store()
     with ThreadPoolExecutor(max_workers=8) as pool:
         results = list(pool.map(lambda _: make_store().append(trusted_scope, item), range(8)))
