@@ -49,6 +49,10 @@ jobs:
         env:
           CEPHAS_DIRMC_ADMIN_DSN: postgresql://postgres:postgres@localhost:5432/postgres
           CEPHAS_DIRMC_MATRIX_PASSWORD: ci-only-matrix-password
+      - run: python scripts/validate_dirmc_pool_security.py
+        env:
+          CEPHAS_DIRMC_ADMIN_DSN: postgresql://postgres:postgres@localhost:5432/postgres
+          CEPHAS_DIRMC_MATRIX_PASSWORD: ci-only-matrix-password
       - run: ruff check src tests scripts
       - run: pytest -q
         env:
