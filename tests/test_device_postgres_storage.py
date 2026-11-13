@@ -1,6 +1,7 @@
 import os
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
+from uuid import uuid4
 
 import pytest
 
@@ -82,7 +83,8 @@ def test_postgres_live_rls_idempotency_and_concurrency():
     if not tenant:
         pytest.skip("requires a pre-provisioned tenant scope for the dedicated test login")
     trusted_scope = scope(tenant)
-    item = association(tenant, "case-1")
+    case_id = f"case-{uuid4().hex}"
+    item = association(tenant, case_id)
 
     def make_store():
         return PostgresDeviceAssociationStore(lambda: psycopg.connect(dsn))
@@ -99,7 +101,7 @@ def test_postgres_live_rls_idempotency_and_concurrency():
         trusted_scope, product_id="cybershield", device_key=DEVICE
     )
     assert len(records) == 1
-    assert records[0].case_id == "case-1"
+    assert records[0].case_id == case_id
 
     other_bu_scope = scope(tenant, business_unit="bu-b")
     assert store.list_for_device(
