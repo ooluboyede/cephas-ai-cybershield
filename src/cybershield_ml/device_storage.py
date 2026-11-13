@@ -5,6 +5,7 @@ must use a customer-managed database adapter with equivalent constraints and iso
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import sqlite3
@@ -135,7 +136,6 @@ class SQLiteDeviceAssociationStore:
         canonical = json.dumps(
             payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False
         )
-        import hashlib
         digest = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
         values = (
             association.tenant_id,
