@@ -96,6 +96,7 @@ def test_postgres_live_rls_idempotency_and_concurrency():
     with ThreadPoolExecutor(max_workers=8) as pool:
         results = list(pool.map(lambda _: make_store().append(trusted_scope, item), range(8)))
     assert sum(results) == 1
+    assert store.append(trusted_scope, item) is False
 
     records = store.list_for_device(
         trusted_scope, product_id="cybershield", device_key=DEVICE
