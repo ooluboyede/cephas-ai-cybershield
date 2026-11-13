@@ -63,7 +63,7 @@ CREATE OR REPLACE FUNCTION dirmc_principal_scope_authorized(
 ) RETURNS BOOLEAN
 LANGUAGE SQL STABLE SECURITY DEFINER
 SET search_path = pg_catalog, public
-AS $
+AS $dirmc$
     SELECT EXISTS (
         SELECT 1 FROM public.dirmc_runtime_principal_scope s
         WHERE s.db_role = session_user
@@ -73,7 +73,7 @@ AS $
           AND s.product_id = p_product
           AND s.business_unit_id = p_business_unit
     );
-$;
+$dirmc$;
 REVOKE ALL ON FUNCTION dirmc_principal_scope_authorized(TEXT,TEXT,TEXT,TEXT,TEXT) FROM PUBLIC;
 
 ALTER TABLE dirmc_device_fraud_associations ENABLE ROW LEVEL SECURITY;
@@ -128,6 +128,8 @@ WITH CHECK (
 -- (db_role, tenant_id, deployment_id, environment, product_id, business_unit_id)
 -- VALUES ('dirmc_tenant_a_runtime', 'tenant-a', 'deployment-a', 'prod',
 --         'cybershield', 'business-unit-a');
+-- GRANT EXECUTE ON FUNCTION dirmc_principal_scope_authorized(TEXT,TEXT,TEXT,TEXT,TEXT)
+-- TO dirmc_tenant_a_runtime;
 -- Use a distinct login principal for each authorised tenant/deployment/BU/product
 -- boundary, or an authenticated database proxy that establishes an equivalent
 -- non-spoofable session_user identity. GUCs alone are not an authorization boundary.
