@@ -133,15 +133,15 @@ def test_postgres_live_rls_idempotency_and_concurrency():
     ):
         PostgresDeviceAssociationStore._set_scope(cursor, trusted_scope)
         cursor.execute(
-                """INSERT INTO dirmc_device_association_audit (
-                    tenant_id, deployment_id, environment, product_id,
-                    business_unit_id, device_key, case_id, action, record_sha256
-                ) VALUES (%s,%s,%s,%s,%s,%s,%s,'association_inserted',%s)""",
-                (
-                    tenant, "deployment-a", "test", "cybershield", "bu-a",
-                    DEVICE, f"audit-forgery-{case_id}", "0" * 64,
-                ),
-            )
+            """INSERT INTO dirmc_device_association_audit (
+                tenant_id, deployment_id, environment, product_id,
+                business_unit_id, device_key, case_id, action, record_sha256
+            ) VALUES (%s,%s,%s,%s,%s,%s,%s,'association_inserted',%s)""",
+            (
+                tenant, "deployment-a", "test", "cybershield", "bu-a",
+                DEVICE, f"audit-forgery-{case_id}", "0" * 64,
+            ),
+        )
     denied_connection.close()
 
     # A valid-looking caller scope is still rejected by RLS unless the
