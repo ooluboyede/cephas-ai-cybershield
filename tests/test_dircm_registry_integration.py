@@ -16,11 +16,14 @@ def dircm_database():
     with psycopg.connect(dsn) as connection:
         connection.execute(POSTGRES_DIRCM_SCHEMA)
         connection.execute("""
-            REVOKE ALL ON dircm_devices, dircm_verified_identifiers, dircm_match_candidates
-            FROM dircm_test_app
+            DO $
+            BEGIN
+                IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'dircm_test_app') THEN
+                    CREATE ROLE dircm_test_app NOLOGIN;
+                END IF;
+            END
+            $
         """)
-        connection.execute("DROP ROLE IF EXISTS dircm_test_app")
-        connection.execute("CREATE ROLE dircm_test_app NOLOGIN")
         connection.execute("""
             GRANT SELECT, INSERT, UPDATE, DELETE ON
             dircm_devices, dircm_verified_identifiers, dircm_match_candidates
@@ -39,7 +42,10 @@ def dircm_database():
 
     with psycopg.connect(dsn) as connection:
         connection.execute("TRUNCATE dircm_match_candidates, dircm_verified_identifiers, dircm_devices")
-        connection.execute("DROP ROLE IF EXISTS dircm_test_app")
+        connection.execute("""
+            REVOKE ALL ON dircm_devices, dircm_verified_identifiers, dircm_match_candidates
+            FROM dircm_test_app
+        """)
         connection.commit()
 
 
