@@ -6,8 +6,8 @@ must use a customer-managed database adapter with equivalent constraints and iso
 import hashlib
 import json
 import os
-import sqlite3
 from pathlib import Path
+import sqlite3
 
 from .contracts import TrustedProductScope
 from .device_intelligence import DeviceFraudAssociation
