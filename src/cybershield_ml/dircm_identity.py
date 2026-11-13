@@ -22,14 +22,14 @@ class IdentityAssurance(str, Enum):
     UNKNOWN = "D"
 
 
-class IdentifierType(StrEnum):
+class IdentifierType(str, Enum):
     DEVICE_CERTIFICATE = "device_certificate"
     TPM_ATTESTATION = "tpm_attestation"
     MANAGED_AGENT_ID = "managed_agent_id"
     PROBABILISTIC_SIGNAL = "probabilistic_signal"
 
 
-class ResolutionStatus(StrEnum):
+class ResolutionStatus(str, Enum):
     VERIFIED_DEVICE = "VERIFIED_DEVICE"
     MATCH_CANDIDATE = "MATCH_CANDIDATE"
     UNKNOWN = "UNKNOWN"
@@ -90,9 +90,7 @@ def digest_device_identifier(
         raise ValueError("tenant_key must contain at least 32 bytes")
     if not tenant_id.strip() or not source_id.strip() or not identifier_value.strip():
         raise ValueError("tenant, source and identifier values are required")
-    message = "\x00".join(
-        ("cybershield-dircm-v1", tenant_id, source_id, identifier_type.value, identifier_value)
-    ).encode("utf-8")
+    message = f"cybershield-dircm-v1\x00{tenant_id}\x00{source_id}\x00{identifier_type.value}\x00{identifier_value}".encode("utf-8")
     return hmac.new(tenant_key, message, hashlib.sha256).hexdigest()
 
 
