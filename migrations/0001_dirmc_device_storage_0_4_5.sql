@@ -108,6 +108,16 @@ $dirmc$;
 
 REVOKE ALL ON FUNCTION public.dirmc_write_association_audit() FROM PUBLIC;
 
+CREATE OR REPLACE FUNCTION public.dirmc_reject_audit_mutation()
+RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = pg_catalog, pg_temp
+AS $dirmc$
+BEGIN
+    RAISE EXCEPTION 'DIRMC audit records are append-only';
+END;
+$dirmc$;
+
 DROP TRIGGER IF EXISTS dirmc_audit_no_update
 ON public.dirmc_device_association_audit;
 CREATE TRIGGER dirmc_audit_no_update
