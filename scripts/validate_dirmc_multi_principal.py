@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from uuid import uuid4
 
 import psycopg
+from psycopg import sql
 from psycopg.conninfo import conninfo_to_dict, make_conninfo
 
 from cybershield_ml.contracts import TrustedProductScope
@@ -28,6 +29,7 @@ PRINCIPALS = (
     ("dirmc_ci_matrix_tenant_b_deploy_a_bu_a_cyber", "tenant-b", "deployment-a", "cybershield", "bu-a"),
     ("dirmc_ci_matrix_tenant_a_deploy_a_bu_a_payroll", "tenant-a", "deployment-a", "payroll", "bu-a"),
 )
+MATRIX_ROLES = {entry[0] for entry in PRINCIPALS}
 
 
 def make_scope(tenant: str, deployment: str, product: str, business_unit: str):
@@ -56,14 +58,32 @@ def make_item(scope: TrustedProductScope, case_id: str) -> DeviceFraudAssociatio
     )
 
 
-def make_store(role: str) -> PostgresDeviceAssociationStore:
-    dsn = make_conninfo(**{
+def runtime_dsn(role: str) -> str:
+    return make_conninfo(**{
         **BASE,
         "dbname": "postgres",
         "user": role,
         "password": PASSWORD,
     })
-    return PostgresDeviceAssociationStore(lambda: psycopg.connect(dsn))
+
+
+def make_store(role: str) -> PostgresDeviceAssociationStore:
+    return PostgresDeviceAssociationStore(
+        lambda: psycopg.connect(runtime_dsn(role))
+    )
+
+
+def assert_cannot_set_role(login_role: str, target_role: str) -> None:
+    with psycopg.connect(runtime_dsn(login_role)) as connection:
+        try:
+            connection.execute(
+                sql.SQL("SET ROLE {}").format(sql.Identifier(target_role))
+            )
+        except psycopg.errors.InsufficientPrivilege:
+            return
+        raise AssertionError(
+            f"{login_role} was able to SET ROLE to {target_role}"
+        )
 
 
 def main() -> None:
@@ -76,10 +96,10 @@ def main() -> None:
         own = store.list_for_device(scope, product_id=product, device_key=DEVICE)
         assert any(record.case_id == case_id for record in own)
         entries.append((role, scope, store))
-    
+
     # Every principal tries each other principal's exact scope. Reads must be
-    # empty and writes must fail at PostgreSQL RLS, not merely application checks.
-    for role, own_scope, store in entries:
+    # empty and writes must fail at PostgreSQL RLS, not merely app validation.
+    for role, _, store in entries:
         for target_role, target_scope, _ in entries:
             if target_role == role:
                 continue
@@ -88,8 +108,7 @@ def main() -> None:
                 target_scope, product_id=target_product, device_key=DEVICE
             )
             assert visible == (), f"{role} read rows belonging to {target_role}"
-            forged_case = f"forged-{uuid4().hex}"
-            forged_item = make_item(target_scope, forged_case)
+            forged_item = make_item(target_scope, f"forged-{uuid4().hex}")
             try:
                 store.append(target_scope, forged_item)
             except psycopg.errors.InsufficientPrivilege:
@@ -99,24 +118,32 @@ def main() -> None:
                     f"{role} wrote using forged scope belonging to {target_role}"
                 )
 
-    # Verify each database login is not a member of any other matrix role,
-    # preventing SET ROLE as a route around session_user-bound authorization.
+    # Inspect only memberships in the five isolated matrix roles. PostgreSQL
+    # has predefined/special roles outside this matrix; they are not alternate
+    # customer principals. Also attempt SET ROLE directly for every peer.
     with psycopg.connect(ADMIN_DSN) as admin:
         for role, _, _ in entries:
             memberships = admin.execute(
-                """SELECT member_role.rolname
-                   FROM pg_auth_members m
-                   JOIN pg_roles member_role ON member_role.oid = m.roleid
-                   JOIN pg_roles grantee ON grantee.oid = m.member
-                   WHERE grantee.rolname = %s""",
+                """SELECT granted_role.rolname
+                   FROM pg_auth_members AS membership
+                   JOIN pg_roles AS granted_role
+                     ON granted_role.oid = membership.roleid
+                   JOIN pg_roles AS member_role
+                     ON member_role.oid = membership.member
+                   WHERE member_role.rolname = %s
+                     AND granted_role.rolname LIKE 'dirmc_ci_matrix_%'""",
                 (role,),
             ).fetchall()
-            assert memberships == (), f"{role} unexpectedly inherits another role"
+            assert memberships == (), (
+                f"{role} has matrix-role memberships: {memberships}"
+            )
+            for target_role in MATRIX_ROLES - {role}:
+                assert_cannot_set_role(role, target_role)
 
     print(
         "DIRMC multi-principal isolation passed: "
         f"{len(entries)} principals, {len(entries) * (len(entries) - 1)} "
-        "cross-principal read/write denial pairs"
+        "cross-principal read/write denial pairs and denied SET ROLE attempts"
     )
 
 
