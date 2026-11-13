@@ -75,14 +75,14 @@ class PostgresDeviceAssociationStore:
                         """INSERT INTO dirmc_device_fraud_associations (
                             tenant_id, deployment_id, environment, product_id,
                             business_unit_id, device_key, case_id, association_status,
-                            evidence_ref, occurred_at, record_json
-                        ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb)
+                            evidence_ref, occurred_at, record_json, record_sha256
+                        ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s)
                         ON CONFLICT DO NOTHING RETURNING case_id""",
                         (
                             item.tenant_id, item.deployment_id, item.environment,
                             item.product_id, scope.business_unit_id or "", item.device_key,
                             item.case_id, item.association_status, item.evidence_ref,
-                            item.occurred_at, canonical,
+                            item.occurred_at, canonical, digest,
                         ),
                     )
                     inserted = cursor.fetchone()
@@ -109,17 +109,6 @@ class PostgresDeviceAssociationStore:
                                 "case/device association already exists with different content"
                             )
                         return False
-                    cursor.execute(
-                        """INSERT INTO dirmc_device_association_audit (
-                            tenant_id, deployment_id, environment, product_id,
-                            business_unit_id, device_key, case_id, action, record_sha256
-                        ) VALUES (%s,%s,%s,%s,%s,%s,%s,'association_inserted',%s)""",
-                        (
-                            item.tenant_id, item.deployment_id, item.environment,
-                            item.product_id, scope.business_unit_id or "",
-                            item.device_key, item.case_id, digest,
-                        ),
-                    )
                     return True
         finally:
             connection.close()
