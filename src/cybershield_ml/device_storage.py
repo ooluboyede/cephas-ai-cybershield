@@ -12,7 +12,6 @@ from pathlib import Path
 from .contracts import TrustedProductScope
 from .device_intelligence import DeviceFraudAssociation
 
-
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS device_fraud_associations (
     tenant_id TEXT NOT NULL,
