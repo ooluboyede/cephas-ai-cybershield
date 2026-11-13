@@ -131,7 +131,7 @@ def main() -> None:
                    JOIN pg_roles AS member_role
                      ON member_role.oid = membership.member
                    WHERE member_role.rolname = %s
-                     AND granted_role.rolname LIKE 'dirmc_ci_matrix_%'""",
+                     AND granted_role.rolname LIKE 'dirmc_ci_matrix_%%'""",
                 (role,),
             ).fetchall()
             assert memberships == (), (
