@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 import pytest
 
 from cybershield_ml.dircm_identity import (
-    DeviceIdentityRegistry, IdentityAssurance, IdentifierType, ResolutionStatus,
+    IdentityAssurance, IdentifierType, ResolutionStatus,
     SourceTrustContext, digest_device_identifier, new_device_id, resolve_device_identity,
 )
 
