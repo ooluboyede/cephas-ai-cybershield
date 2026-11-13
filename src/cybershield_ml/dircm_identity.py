@@ -11,11 +11,11 @@ import hmac
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from enum import StrEnum
+from enum import Enum
 from typing import Protocol
 
 
-class IdentityAssurance(StrEnum):
+class IdentityAssurance(str, Enum):
     CRYPTOGRAPHICALLY_VERIFIED = "A"
     AUTHENTICATED_MANAGED = "B"
     PROBABILISTIC = "C"
