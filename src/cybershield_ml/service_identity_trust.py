@@ -41,6 +41,8 @@ class ServiceIdentityTrustBundle:
     def _verified_certificates(
         self, pinned_signer_public_key_b64: str
     ) -> list[tuple[str, str, str]]:
+        if not isinstance(self.payload, dict):
+            raise ValueError("trust-bundle payload must be a JSON object")
         try:
             signature = base64.b64decode(self.signature_b64, validate=True)
             public_key_raw = base64.b64decode(pinned_signer_public_key_b64, validate=True)
