@@ -171,6 +171,7 @@ class AzureConfidentialLedgerAdapter:
         receipt_poll_attempts: int = 20,
         poll_interval_seconds: float = 1.0,
         native_receipt_verifier: collections.abc.Callable | None = None,
+        lookup_max_pages: int = 1000,
     ) -> None:
         if not service_identity_certificate_pem.strip():
             raise ValueError("out-of-band pinned ACL service identity certificate is required")
@@ -184,6 +185,8 @@ class AzureConfidentialLedgerAdapter:
             raise ValueError("expected_udf_sha256 must be lowercase SHA-256 hex")
         if commit_poll_attempts < 1 or receipt_poll_attempts < 1:
             raise ValueError("poll attempts must be positive")
+        if lookup_max_pages < 1 or lookup_max_pages > 10000:
+            raise ValueError("lookup_max_pages must be between 1 and 10000")
         if poll_interval_seconds < 0 or poll_interval_seconds > 30:
             raise ValueError("poll interval must be between 0 and 30 seconds")
         self._transport = transport
@@ -195,6 +198,7 @@ class AzureConfidentialLedgerAdapter:
         self._receipt_attempts = receipt_poll_attempts
         self._poll_interval = poll_interval_seconds
         self._native_receipt_verifier = native_receipt_verifier
+        self._lookup_max_pages = lookup_max_pages
 
     def _verify_deployed_udf(self) -> None:
         response = self._transport.request_json(
@@ -236,6 +240,72 @@ class AzureConfidentialLedgerAdapter:
                 time.sleep(self._poll_interval)
         raise ACLUnavailable("ACL receipt remained Loading; no acknowledgement issued")
 
+    def _find_existing_transaction(self, checkpoint: WitnessCheckpoint) -> str | None:
+        """Resolve an uncertain write by scanning the approved collection.
+
+        ACL does not expose a transaction ID inside the pre-hook context. The
+        ledger assigns it and returns it from POST /app/transactions. If that
+        response is lost, or an exact retry is rejected by the UDF operation
+        index, scan the collection and accept only one exact operation/digest
+        match. Any ambiguity or incomplete pagination fails closed.
+        """
+        path = (
+            "/app/transactions?"
+            + urllib.parse.urlencode({"collectionId": self._collection_id})
+        )
+        matches: list[str] = []
+        for page_number in range(self._lookup_max_pages):
+            response = None
+            for attempt in range(self._commit_attempts):
+                response = self._transport.request_json("GET", path)
+                state = response.get("state")
+                if state == "Ready":
+                    break
+                if state != "Loading":
+                    raise ACLProtocolError(
+                        f"unexpected ACL collection query state: {state!r}"
+                    )
+                if attempt + 1 < self._commit_attempts:
+                    time.sleep(self._poll_interval)
+            if response is None or response.get("state") != "Ready":
+                raise ACLUnavailable("ACL collection lookup remained Loading")
+            entries = response.get("entries")
+            if not isinstance(entries, list):
+                raise ACLProtocolError("ACL collection lookup omitted entries")
+            for entry in entries:
+                if not isinstance(entry, dict):
+                    raise ACLProtocolError("ACL collection contains a malformed entry")
+                contents = entry.get("contents")
+                transaction_id = entry.get("transactionId")
+                if not isinstance(contents, str) or not isinstance(transaction_id, str):
+                    raise ACLProtocolError("ACL collection entry lacks contents or transactionId")
+                try:
+                    payload = json.loads(contents)
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(payload, dict) or payload.get("operation_id") != checkpoint.operation_id:
+                    continue
+                if payload.get("record_type") != "cephas-release-witness-checkpoint-v2":
+                    raise ACLProtocolError("operation ID is present in a different record type")
+                if payload.get("checkpoint_sha256") != checkpoint.checkpoint_sha256:
+                    raise ACLConflict("operation ID already exists with a different checkpoint")
+                matches.append(transaction_id)
+            next_link = response.get("nextLink")
+            if not next_link:
+                break
+            if not isinstance(next_link, str):
+                raise ACLProtocolError("ACL collection nextLink is malformed")
+            parsed_next = urllib.parse.urlsplit(next_link)
+            if parsed_next.scheme or parsed_next.netloc or not parsed_next.path.startswith("/app/transactions"):
+                raise ACLProtocolError("ACL collection nextLink escaped the pinned ledger origin")
+            path = next_link
+        else:
+            raise ACLUnavailable("ACL collection lookup exceeded the configured page limit")
+
+        if len(matches) > 1:
+            raise ACLProtocolError("multiple ledger entries match one operation ID; manual reconciliation required")
+        return matches[0] if matches else None
+
     def append(
         self,
         checkpoint: WitnessCheckpoint,
@@ -258,18 +328,33 @@ class AzureConfidentialLedgerAdapter:
             "contract_version": "0.3.5",
         }
         self._verify_deployed_udf()
-        response = self._transport.request_json(
-            "POST",
-            f"/app/transactions?collectionId={urllib.parse.quote(self._collection_id, safe='')}",
-            {
-                "contents": json.dumps(contents, sort_keys=True, separators=(",", ":")),
-                "preHooks": [{"functionId": self._udf_id}],
-                "applicationClaims": [claim],
-            },
-        )
-        transaction_id = response.get("transactionId")
-        if not isinstance(transaction_id, str) or not transaction_id:
-            raise ACLProtocolError("ACL write response did not contain transactionId")
+        write_body = {
+            "contents": json.dumps(contents, sort_keys=True, separators=(",", ":")),
+            "preHooks": [{"functionId": self._udf_id}],
+            "applicationClaims": [claim],
+        }
+        try:
+            response = self._transport.request_json(
+                "POST",
+                f"/app/transactions?collectionId={urllib.parse.quote(self._collection_id, safe='')}",
+                write_body,
+            )
+        except ACLProviderError as write_error:
+            # The UDF rejects exact operation replays. A dropped response may
+            # also hide a committed transaction ID. Reconcile only by finding
+            # one exact immutable ledger entry, never by guessing.
+            try:
+                transaction_id = self._find_existing_transaction(checkpoint)
+            except ACLProviderError:
+                raise write_error
+            if transaction_id is None:
+                raise write_error
+        else:
+            transaction_id = response.get("transactionId")
+            if not isinstance(transaction_id, str) or not transaction_id:
+                transaction_id = self._find_existing_transaction(checkpoint)
+                if transaction_id is None:
+                    raise ACLProtocolError("ACL write response did not contain transactionId")
         receipt = self._get_committed_receipt(transaction_id)
         self.verify_native_receipt(
             receipt,
