@@ -79,8 +79,11 @@ class ACLHTTPSJSONTransport:
     def request_json(self, method: str, path: str, body: dict | None = None) -> dict:
         if not path.startswith("/") or "://" in path or ".." in path:
             raise ValueError("ACL path must be an absolute service-relative path")
-        query = urllib.parse.urlencode({"api-version": self._api_version})
-        url = f"{self._origin}{path}?{query}"
+        parsed_path = urllib.parse.urlsplit(path)
+        query_items = urllib.parse.parse_qsl(parsed_path.query, keep_blank_values=True)
+        query_items.append(("api-version", self._api_version))
+        query = urllib.parse.urlencode(query_items)
+        url = f"{self._origin}{parsed_path.path}?{query}"
         token = self._token_provider()
         if not isinstance(token, str) or not token.strip():
             raise ACLProviderError("token provider returned an empty bearer token")
@@ -157,6 +160,7 @@ class AzureConfidentialLedgerAdapter:
         commit_poll_attempts: int = 20,
         receipt_poll_attempts: int = 20,
         poll_interval_seconds: float = 1.0,
+        native_receipt_verifier: Callable | None = None,
     ) -> None:
         if not service_identity_certificate_pem.strip():
             raise ValueError("out-of-band pinned ACL service identity certificate is required")
@@ -178,6 +182,7 @@ class AzureConfidentialLedgerAdapter:
         self._commit_attempts = commit_poll_attempts
         self._receipt_attempts = receipt_poll_attempts
         self._poll_interval = poll_interval_seconds
+        self._native_receipt_verifier = native_receipt_verifier
 
     def _verify_deployed_udf(self) -> None:
         response = self._transport.request_json(
@@ -251,6 +256,12 @@ class AzureConfidentialLedgerAdapter:
         if not isinstance(transaction_id, str) or not transaction_id:
             raise ACLProtocolError("ACL write response did not contain transactionId")
         receipt = self._get_committed_receipt(transaction_id)
+        self.verify_native_receipt(
+            receipt,
+            service_identity_certificate_pem=self._service_cert,
+            application_claims=[claim],
+            native_receipt_verifier=self._native_receipt_verifier,
+        )
         return ACLAppendResult(
             transaction_id=transaction_id,
             receipt_response=receipt,
@@ -263,6 +274,7 @@ class AzureConfidentialLedgerAdapter:
         *,
         service_identity_certificate_pem: str,
         application_claims: list[dict],
+        native_receipt_verifier: Callable | None = None,
     ) -> None:
         """Verify using Microsoft's offline ACL receipt verifier.
 
@@ -270,12 +282,14 @@ class AzureConfidentialLedgerAdapter:
         verifier performs Merkle proof, signing-node endorsement and claims-digest
         verification without contacting Azure.
         """
-        try:
-            from azure.confidentialledger.receipt import verify_receipt
-        except ImportError as exc:
-            raise ACLProviderError(
-                "install azure-confidentialledger to verify native ACL receipts"
-            ) from exc
+        if native_receipt_verifier is None:
+            try:
+                from azure.confidentialledger.receipt import verify_receipt
+            except ImportError as exc:
+                raise ACLProviderError(
+                    "install azure-confidentialledger to verify native ACL receipts"
+                ) from exc
+            native_receipt_verifier = verify_receipt
         if receipt_response.get("state") != "Ready":
             raise ACLProtocolError("cannot verify an uncommitted or Loading receipt")
         native_receipt = receipt_response.get("receipt")
@@ -284,7 +298,7 @@ class AzureConfidentialLedgerAdapter:
         leaf = native_receipt.get("leafComponents")
         if not isinstance(leaf, dict) or not leaf.get("writeSetDigest") or not leaf.get("claimsDigest"):
             raise ACLProtocolError("native receipt is missing writeSetDigest or claimsDigest")
-        verify_receipt(
+        native_receipt_verifier(
             native_receipt,
             service_identity_certificate_pem,
             application_claims=application_claims,
