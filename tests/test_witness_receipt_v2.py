@@ -107,6 +107,7 @@ def test_v2_envelope_verifies_checkpoint_and_native_receipt_offline():
     result = envelope(cp, cert).verify_offline(
         pinned_service_identity_certificate_pem=cert,
         native_receipt_verifier=verifier,
+        expected_udf_sha256="d" * 64,
     )
     assert result == cp
     assert called["native"] == receipt()
@@ -139,6 +140,7 @@ def test_v2_rejects_wrong_pinned_service_identity():
         item.verify_offline(
             pinned_service_identity_certificate_pem=make_certificate(),
             native_receipt_verifier=lambda *_args, **_kwargs: None,
+            expected_udf_sha256="d" * 64,
         )
 
 
