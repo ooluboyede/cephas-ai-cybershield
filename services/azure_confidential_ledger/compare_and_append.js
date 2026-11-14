@@ -20,7 +20,8 @@ export function main() {
         if (typeof value === "number" && !Number.isSafeInteger(value)) fail("non_integer_number");
         return JSON.stringify(value);
     };
-    const hex = (buffer) => ccf.bufToHex(buffer).toLowerCase();
+    const hex = (buffer) => Array.from(new Uint8Array(buffer))
+        .map((value) => value.toString(16).padStart(2, "0")).join("");
 
     const payload = parse(context.contents, "transaction_contents");
     if (!payload || payload.record_type !== "cephas-release-witness-checkpoint-v2") {
