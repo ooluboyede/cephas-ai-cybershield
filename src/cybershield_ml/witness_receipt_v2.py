@@ -11,8 +11,6 @@ from dataclasses import dataclass
 from typing import Any
 
 from cryptography import x509
-from cryptography.hazmat.primitives import hashes
-
 from .release_witness import WitnessCheckpoint, canonical_json
 
 
