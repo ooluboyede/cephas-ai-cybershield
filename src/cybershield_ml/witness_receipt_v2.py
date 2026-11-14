@@ -113,13 +113,19 @@ class WitnessReceiptEnvelopeV2:
         native_receipt_verifier=None,
         expected_udf_sha256: str,
         service_identity_trust_bundle=None,
+        pinned_trust_bundle_signer_public_key_b64: str | None = None,
     ) -> WitnessCheckpoint:
         """Verify envelope claims and provider proof without network access."""
         from cryptography.hazmat.primitives.serialization import Encoding
 
         if service_identity_trust_bundle is not None:
+            if not pinned_trust_bundle_signer_public_key_b64:
+                raise ValueError(
+                    "customer trust-bundle signer public key must be pinned out of band"
+                )
             if not service_identity_trust_bundle.contains_issuance_identity(
-                self.service_identity_sha256
+                self.service_identity_sha256,
+                pinned_trust_bundle_signer_public_key_b64,
             ):
                 raise ValueError(
                     "receipt issuance identity is absent from the customer trust bundle "
@@ -216,7 +222,10 @@ class WitnessReceiptEnvelopeV2:
         # write-set digest and the supplied application-claims digest.
         if service_identity_trust_bundle is not None:
             service_identity_trust_bundle.verify_native_receipt(
-                self.receipt, self.application_claims, native_receipt_verifier
+                self.receipt,
+                self.application_claims,
+                native_receipt_verifier,
+                pinned_trust_bundle_signer_public_key_b64,
             )
         else:
             native_receipt_verifier(
