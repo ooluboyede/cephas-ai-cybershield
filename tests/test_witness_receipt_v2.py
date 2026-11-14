@@ -199,10 +199,9 @@ def signed_trust_bundle(active_cert, historical_cert, historical_status="histori
             Encoding.Raw, PublicFormat.Raw
         )
     ).decode("ascii")
-    return ServiceIdentityTrustBundle(
-        payload=payload,
-        signature_b64=signature,
-        signer_public_key_b64=public_key,
+    return (
+        ServiceIdentityTrustBundle(payload=payload, signature_b64=signature),
+        public_key,
     )
 
 
@@ -211,7 +210,7 @@ def test_historical_receipt_verifies_with_customer_signed_rotation_bundle():
     new_cert = make_certificate()
     cp = checkpoint()
     item = envelope(cp, old_cert)
-    trust_bundle = signed_trust_bundle(new_cert, old_cert)
+    trust_bundle, signer_public_key = signed_trust_bundle(new_cert, old_cert)
     attempts = []
 
     def verifier(native, service_pem, *, application_claims):
@@ -224,6 +223,7 @@ def test_historical_receipt_verifies_with_customer_signed_rotation_bundle():
         native_receipt_verifier=verifier,
         expected_udf_sha256="d" * 64,
         service_identity_trust_bundle=trust_bundle,
+        pinned_trust_bundle_signer_public_key_b64=signer_public_key,
     )
     assert result == cp
     assert attempts == [new_cert, old_cert]
@@ -233,7 +233,9 @@ def test_rotation_bundle_rejects_revoked_issuance_identity():
     old_cert = make_certificate()
     new_cert = make_certificate()
     item = envelope(checkpoint(), old_cert)
-    trust_bundle = signed_trust_bundle(new_cert, old_cert, historical_status="revoked")
+    trust_bundle, signer_public_key = signed_trust_bundle(
+        new_cert, old_cert, historical_status="revoked"
+    )
 
     with pytest.raises(ValueError, match="absent from the customer trust bundle"):
         item.verify_offline(
@@ -241,20 +243,22 @@ def test_rotation_bundle_rejects_revoked_issuance_identity():
             native_receipt_verifier=lambda *_args, **_kwargs: None,
             expected_udf_sha256="d" * 64,
             service_identity_trust_bundle=trust_bundle,
+            pinned_trust_bundle_signer_public_key_b64=signer_public_key,
         )
 
 
 def test_rotation_bundle_rejects_tampered_payload_signature():
     old_cert = make_certificate()
     new_cert = make_certificate()
-    trust_bundle = signed_trust_bundle(new_cert, old_cert)
+    trust_bundle, signer_public_key = signed_trust_bundle(new_cert, old_cert)
     tampered = dict(trust_bundle.payload)
     tampered["active_fingerprint_sha256"] = "0" * 64
     invalid = ServiceIdentityTrustBundle(
         payload=tampered,
         signature_b64=trust_bundle.signature_b64,
-        signer_public_key_b64=trust_bundle.signer_public_key_b64,
     )
 
     with pytest.raises(ValueError, match="signature verification failed"):
-        invalid.contains_issuance_identity(certificate_fingerprint_sha256(old_cert))
+        invalid.contains_issuance_identity(
+            certificate_fingerprint_sha256(old_cert), signer_public_key
+        )
