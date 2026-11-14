@@ -34,7 +34,16 @@ export function main() {
     }
 
     const cp = payload.checkpoint;
-    if (!cp || cp.protocol !== "cephas.cybershield.release-witness" || cp.protocol_version !== "1") {
+    const expectedFields = [
+        "artifact_sha256", "deployment_id", "metadata_sha256", "operation_id",
+        "previous_checkpoint_sha256", "product", "protocol", "protocol_version",
+        "publisher_key_id", "publisher_signature_sha256", "release_sequence",
+        "release_version", "tenant_id"
+    ].sort();
+    if (!cp || Object.keys(cp).sort().join("|") !== expectedFields.join("|")) {
+        fail("checkpoint_field_set_mismatch");
+    }
+    if (cp.protocol !== "cephas.cybershield.release-witness" || cp.protocol_version !== "1") {
         fail("unsupported_checkpoint_protocol");
     }
     if (!Number.isSafeInteger(cp.release_sequence) || cp.release_sequence < 1) fail("invalid_sequence");
@@ -52,13 +61,10 @@ export function main() {
         fail("invalid_predecessor");
     }
 
+    if (payload.operation_id !== cp.operation_id) fail("operation_id_mismatch");
+    if (context.collectionId !== "cephas-release-witness-v2") fail("wrong_collection");
     const canonical = stable(cp);
     const canonicalDigest = hex(ccf.crypto.digest("SHA-256", bytes(canonical)));
-    if (canonical !== JSON.stringify(cp) && canonical !== payload.canonical_checkpoint_json) {
-        // The adapter's application claim is the canonical byte authority; the
-        // stable serialization above is the cross-language digest input.
-        if (payload.checkpoint_sha256 !== canonicalDigest) fail("noncanonical_checkpoint");
-    }
     if (payload.checkpoint_sha256 !== canonicalDigest) fail("checkpoint_digest_mismatch");
 
     // Scope comes from the authenticated ACL principal, never request fields.
