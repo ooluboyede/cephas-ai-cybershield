@@ -61,6 +61,8 @@ class WitnessReceiptEnvelopeV2:
     ) -> "WitnessReceiptEnvelopeV2":
         from cryptography.hazmat.primitives.serialization import Encoding
 
+        if receipt_response.get("state") != "Ready" or receipt_response.get("transactionId") != transaction_id:
+            raise ValueError("receipt response must be Ready and bound to the supplied transaction ID")
         cert = x509.load_pem_x509_certificate(service_identity_certificate_pem.encode("utf-8"))
         cert_der = cert.public_bytes(Encoding.DER)
         claim_bytes = canonical_json({"applicationClaims": application_claims})
@@ -85,6 +87,7 @@ class WitnessReceiptEnvelopeV2:
         *,
         pinned_service_identity_certificate_pem: str,
         native_receipt_verifier=None,
+        expected_udf_sha256: str | None = None,
     ) -> WitnessCheckpoint:
         """Verify envelope claims and provider proof without network access."""
         from cryptography.hazmat.primitives.serialization import Encoding
@@ -96,6 +99,11 @@ class WitnessReceiptEnvelopeV2:
         if cert_digest != self.service_identity_sha256:
             raise ValueError("pinned service identity certificate fingerprint mismatch")
 
+        expected_claims_digest = hashlib.sha256(
+            canonical_json({"applicationClaims": self.application_claims})
+        ).hexdigest()
+        if expected_claims_digest != self.claims_digest:
+            raise ValueError("envelope application-claims digest mismatch")
         canonical_bytes = base64.b64decode(self.checkpoint_canonical_b64, validate=True)
         if hashlib.sha256(canonical_bytes).hexdigest() != self.application_claims[0].get(
             "checkpoint_sha256"
@@ -127,6 +135,12 @@ class WitnessReceiptEnvelopeV2:
         claim = self.application_claims[0]
         if claim.get("schema") != "cephas.cybershield.acl-witness-claims.v2":
             raise ValueError("missing approved CEPHAS ACL application-claims schema")
+        if claim.get("udf_id") != self.udf_id or claim.get("udf_sha256") != self.udf_sha256:
+            raise ValueError("application claims do not bind the envelope UDF identity")
+        if claim.get("contract_version") != self.contract_version:
+            raise ValueError("application claims contract version mismatch")
+        if expected_udf_sha256 is not None and expected_udf_sha256 != self.udf_sha256:
+            raise ValueError("UDF digest does not match the independently pinned expected digest")
         if claim.get("checkpoint_sha256") != checkpoint.checkpoint_sha256:
             raise ValueError("application claims do not bind the checkpoint digest")
         if claim.get("operation_id") != checkpoint.operation_id:
