@@ -345,6 +345,8 @@ class AzureConfidentialLedgerAdapter:
             # one exact immutable ledger entry, never by guessing.
             try:
                 transaction_id = self._find_existing_transaction(checkpoint)
+            except (ACLConflict, ACLProtocolError):
+                raise
             except ACLProviderError:
                 raise write_error
             if transaction_id is None:
