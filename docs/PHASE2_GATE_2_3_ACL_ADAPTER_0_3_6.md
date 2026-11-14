@@ -15,8 +15,8 @@
 - Sends each append with the named pre-hook and canonical checkpoint application claims.
 - Waits for transaction status `Committed`; then polls until receipt state is `Ready`. `Pending`, `Loading`, unresolved timeouts and malformed responses never produce a witness acknowledgement.
 - Adds a provider-specific v2 receipt envelope. PR #9 `WitnessReceipt` v1 is unchanged.
-- Adds an offline verifier that checks the customer-pinned service identity certificate fingerprint, exact canonical checkpoint bytes, checkpoint SHA-256, scope and operation claims, required CCF receipt fields, and the Microsoft ACL SDK receipt verifier.
-- Adds adapter and offline-envelope unit tests using fake transport and an injected verifier. These are not live ACL proof.
+- Adds an offline verifier that checks the customer-pinned service identity certificate fingerprint, exact canonical checkpoint bytes, checkpoint SHA-256, scope and operation claims, required CCF receipt fields, the out-of-band expected UDF SHA-256, and the Microsoft ACL SDK receipt verifier.
+- Adds adapter and offline-envelope unit tests using fake transport and an injected verifier, including exact retry reconciliation and conflicting operation-ID handling. These are not live ACL proof.
 
 ## 2. Important provider semantics and controls
 
@@ -53,6 +53,7 @@ The customer-pinned service identity certificate is supplied separately to the o
 - Exact idempotent retry and uncertain-write recovery are now implemented as a bounded, read-only scan of the approved ACL collection. The adapter accepts a retry only when exactly one ledger entry matches the operation ID, record type, full checkpoint object, and checkpoint digest; it then polls that original transaction to Committed, retrieves its native receipt, and verifies it before returning success. Conflicting operation IDs, duplicate matches, incomplete pagination, Loading timeouts, and unresolved scans fail closed. The pre-hook itself cannot know the ledger-assigned transaction ID: Microsoft documents that the ID is returned by the write endpoint, not exposed in the documented transaction-hook context. Live validation of this recovery path remains mandatory.
 - Historical certificate rotation continuity, 10+ writer concurrency, timeout-after-commit, restore/failover, and air-gapped verification with the real ACL SDK/certificate chain remain Gate 2.4–2.6 evidence.
 - The envelope's local `claims_digest` field is a diagnostic SHA-256 of canonicalized claims; the authoritative provider claims digest is verified by Microsoft's native receipt verifier.
+- Offline verification now requires the expected UDF SHA-256 as an explicit out-of-band input; omitting that pin is not an accepted verification mode.
 - This branch does not deploy Azure resources, manage subscriptions, set resource locks, configure PIM/RBAC, archive external root checkpoints, or export control-plane events to a separate SIEM.
 
 ## 5. Customer configuration required for live validation
