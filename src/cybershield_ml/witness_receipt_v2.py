@@ -46,7 +46,11 @@ class WitnessReceiptEnvelopeV2:
         if len(self.application_claims) != 1 or not isinstance(self.application_claims[0], dict):
             raise ValueError("exactly one structured application-claims object is required")
         leaf = self.receipt.get("leafComponents")
-        if not isinstance(leaf, dict) or not leaf.get("writeSetDigest") or not leaf.get("claimsDigest"):
+        if (
+            not isinstance(leaf, dict)
+            or not leaf.get("writeSetDigest")
+            or not leaf.get("claimsDigest")
+        ):
             raise ValueError("native receipt must contain writeSetDigest and claimsDigest")
         if not self.udf_id or not self.contract_version:
             raise ValueError("UDF identity and contract version are required")
@@ -65,8 +69,13 @@ class WitnessReceiptEnvelopeV2:
     ) -> WitnessReceiptEnvelopeV2:
         from cryptography.hazmat.primitives.serialization import Encoding
 
-        if receipt_response.get("state") != "Ready" or receipt_response.get("transactionId") != transaction_id:
-            raise ValueError("receipt response must be Ready and bound to the supplied transaction ID")
+        if (
+            receipt_response.get("state") != "Ready"
+            or receipt_response.get("transactionId") != transaction_id
+        ):
+            raise ValueError(
+                "receipt response must be Ready and bound to the supplied transaction ID"
+            )
         if len(application_claims) != 1 or not isinstance(application_claims[0], dict):
             raise ValueError("exactly one structured application-claims object is required")
         claim = application_claims[0]
@@ -148,7 +157,9 @@ class WitnessReceiptEnvelopeV2:
         if checkpoint.canonical_bytes() != canonical_bytes:
             raise ValueError("checkpoint bytes are not canonical under PR #9 v1 rules")
         if len(self.application_claims) != 1 or not isinstance(self.application_claims[0], dict):
-            raise ValueError("receipt must contain exactly one structured application-claims object")
+            raise ValueError(
+                "receipt must contain exactly one structured application-claims object"
+            )
         claim = self.application_claims[0]
         if claim.get("schema") != "cephas.cybershield.acl-witness-claims.v2":
             raise ValueError("missing approved CEPHAS ACL application-claims schema")
