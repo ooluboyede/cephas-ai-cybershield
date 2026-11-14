@@ -53,6 +53,9 @@ def claims(cp):
         "tenant_id": cp.tenant_id,
         "deployment_id": cp.deployment_id,
         "product": cp.product,
+        "udf_id": "cephasReleaseWitnessCompareAndAppend",
+        "udf_sha256": "d" * 64,
+        "contract_version": "0.3.5",
     }]
 
 
