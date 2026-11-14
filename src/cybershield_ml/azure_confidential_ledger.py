@@ -226,14 +226,18 @@ class AzureConfidentialLedgerAdapter:
             if attempt + 1 < self._commit_attempts:
                 time.sleep(self._poll_interval)
         if not committed:
-            raise ACLUnavailable("ACL transaction did not reach Committed; no acknowledgement issued")
+            raise ACLUnavailable(
+                "ACL transaction did not reach Committed; no acknowledgement issued"
+            )
 
         receipt_path = f"/app/transactions/{urllib.parse.quote(transaction_id, safe='')}/receipt"
         for attempt in range(self._receipt_attempts):
             response = self._transport.request_json("GET", receipt_path)
             if response.get("state") == "Ready":
                 if response.get("transactionId") != transaction_id:
-                    raise ACLProtocolError("receipt transaction ID does not match requested transaction")
+                    raise ACLProtocolError(
+                        "receipt transaction ID does not match requested transaction"
+                    )
                 return response
             if response.get("state") != "Loading":
                 raise ACLProtocolError("ACL receipt response is not Ready or Loading")
@@ -284,14 +288,19 @@ class AzureConfidentialLedgerAdapter:
                     payload = json.loads(contents)
                 except json.JSONDecodeError:
                     continue
-                if not isinstance(payload, dict) or payload.get("operation_id") != checkpoint.operation_id:
+                if (
+                    not isinstance(payload, dict)
+                    or payload.get("operation_id") != checkpoint.operation_id
+                ):
                     continue
                 if payload.get("record_type") != "cephas-release-witness-checkpoint-v2":
                     raise ACLProtocolError("operation ID is present in a different record type")
                 if payload.get("checkpoint_sha256") != checkpoint.checkpoint_sha256:
                     raise ACLConflict("operation ID already exists with a different checkpoint")
                 if payload.get("checkpoint") != checkpoint.as_dict():
-                    raise ACLProtocolError("matching checkpoint digest has inconsistent ledger contents")
+                    raise ACLProtocolError(
+                        "matching checkpoint digest has inconsistent ledger contents"
+                    )
                 matches.append(transaction_id)
             next_link = response.get("nextLink")
             if not next_link:
@@ -299,14 +308,20 @@ class AzureConfidentialLedgerAdapter:
             if not isinstance(next_link, str):
                 raise ACLProtocolError("ACL collection nextLink is malformed")
             parsed_next = urllib.parse.urlsplit(next_link)
-            if parsed_next.scheme or parsed_next.netloc or not parsed_next.path.startswith("/app/transactions"):
+            if (
+                parsed_next.scheme
+                or parsed_next.netloc
+                or not parsed_next.path.startswith("/app/transactions")
+            ):
                 raise ACLProtocolError("ACL collection nextLink escaped the pinned ledger origin")
             path = next_link
         else:
             raise ACLUnavailable("ACL collection lookup exceeded the configured page limit")
 
         if len(matches) > 1:
-            raise ACLProtocolError("multiple ledger entries match one operation ID; manual reconciliation required")
+            raise ACLProtocolError(
+                "multiple ledger entries match one operation ID; manual reconciliation required"
+            )
         return matches[0] if matches else None
 
     def append(
@@ -401,7 +416,11 @@ class AzureConfidentialLedgerAdapter:
         if not isinstance(native_receipt, dict):
             raise ACLProtocolError("receipt response has no native CCF receipt")
         leaf = native_receipt.get("leafComponents")
-        if not isinstance(leaf, dict) or not leaf.get("writeSetDigest") or not leaf.get("claimsDigest"):
+        if (
+            not isinstance(leaf, dict)
+            or not leaf.get("writeSetDigest")
+            or not leaf.get("claimsDigest")
+        ):
             raise ACLProtocolError("native receipt is missing writeSetDigest or claimsDigest")
         native_receipt_verifier(
             native_receipt,
