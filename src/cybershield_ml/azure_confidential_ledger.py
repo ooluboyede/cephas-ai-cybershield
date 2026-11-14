@@ -354,7 +354,10 @@ class AzureConfidentialLedgerAdapter:
         try:
             response = self._transport.request_json(
                 "POST",
-                f"/app/transactions?collectionId={urllib.parse.quote(self._collection_id, safe='')}",
+                (
+                    "/app/transactions?collectionId="
+                    + urllib.parse.quote(self._collection_id, safe="")
+                ),
                 write_body,
             )
         except ACLProviderError as write_error:
