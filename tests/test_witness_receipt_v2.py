@@ -149,16 +149,16 @@ def test_v2_rejects_receipt_without_write_set_or_claims_digest_at_construction()
     cert = make_certificate()
     item = envelope(cp, cert)
     bad_receipt = {"leafComponents": {"claimsDigest": "f" * 64}}
-    broken = WitnessReceiptEnvelopeV2(
-        provider_type=item.provider_type,
-        envelope_version=2,
-        transaction_id=item.transaction_id,
-        claims_digest=item.claims_digest,
-        checkpoint_canonical_b64=item.checkpoint_canonical_b64,
-        receipt=bad_receipt,
-        application_claims=item.application_claims,
-        service_identity_sha256=item.service_identity_sha256,
-        udf_id=item.udf_id,
-        udf_sha256=item.udf_sha256,
-    )
-    assert broken.receipt == bad_receipt
+    with pytest.raises(ValueError, match="writeSetDigest"):
+        WitnessReceiptEnvelopeV2(
+            provider_type=item.provider_type,
+            envelope_version=2,
+            transaction_id=item.transaction_id,
+            claims_digest=item.claims_digest,
+            checkpoint_canonical_b64=item.checkpoint_canonical_b64,
+            receipt=bad_receipt,
+            application_claims=item.application_claims,
+            service_identity_sha256=item.service_identity_sha256,
+            udf_id=item.udf_id,
+            udf_sha256=item.udf_sha256,
+        )
