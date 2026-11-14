@@ -49,6 +49,11 @@ class JSONTransport(Protocol):
         """Perform an authenticated JSON request against the pinned ACL endpoint."""
 
 
+class _RejectRedirects(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        raise urllib.error.HTTPError(req.full_url, code, "ACL redirects are forbidden", headers, fp)
+
+
 class ACLHTTPSJSONTransport:
     """Small HTTPS transport with explicit TLS trust and bearer-token injection."""
 
@@ -75,6 +80,10 @@ class ACLHTTPSJSONTransport:
         self._timeout = timeout_seconds
         self._api_version = api_version
         self._ssl_context = ssl.create_default_context(cafile=service_certificate_path)
+        self._opener = urllib.request.build_opener(
+            urllib.request.HTTPSHandler(context=self._ssl_context),
+            _RejectRedirects(),
+        )
 
     def request_json(self, method: str, path: str, body: dict | None = None) -> dict:
         if not path.startswith("/") or "://" in path or ".." in path:
@@ -101,9 +110,7 @@ class ACLHTTPSJSONTransport:
             },
         )
         try:
-            with urllib.request.urlopen(
-                request, context=self._ssl_context, timeout=self._timeout
-            ) as response:
+            with self._opener.open(request, timeout=self._timeout) as response:
                 raw = response.read(2_000_001)
                 if len(raw) > 2_000_000:
                     raise ACLProtocolError("ACL response exceeded the 2 MB safety limit")
@@ -137,6 +144,8 @@ def _canonical_checkpoint_claim(checkpoint: WitnessCheckpoint) -> dict:
         "tenant_id": checkpoint.tenant_id,
         "deployment_id": checkpoint.deployment_id,
         "product": checkpoint.product,
+        "udf_id": DEFAULT_UDF_ID,
+        "contract_version": "0.3.5",
     }
 
 
@@ -233,6 +242,9 @@ class AzureConfidentialLedgerAdapter:
         if expected_previous_checkpoint_sha256 != checkpoint.previous_checkpoint_sha256:
             raise ValueError("expected predecessor must equal the checkpoint predecessor")
         claim = _canonical_checkpoint_claim(checkpoint)
+        claim["udf_id"] = self._udf_id
+        claim["udf_sha256"] = self._udf_sha256
+        claim["contract_version"] = "0.3.5"
         contents = {
             "record_type": "cephas-release-witness-checkpoint-v2",
             "checkpoint": checkpoint.as_dict(),
