@@ -3,7 +3,9 @@ import hashlib
 import pytest
 
 from cybershield_ml.azure_confidential_ledger import (
+    ACLConflict,
     ACLProtocolError,
+    ACLProviderError,
     AzureConfidentialLedgerAdapter,
 )
 from cybershield_ml.release_witness import WitnessCheckpoint
@@ -113,3 +115,74 @@ def test_adapter_rejects_loading_receipt_until_ready_then_fails_closed():
     from cybershield_ml.azure_confidential_ledger import ACLUnavailable
     with pytest.raises(ACLUnavailable, match="Loading"):
         instance.append(checkpoint(), expected_previous_checkpoint_sha256=None)
+
+
+
+def test_adapter_recovers_exact_retry_from_ledger_collection():
+    transport = FakeTransport()
+    cp = checkpoint()
+    entry_contents = {
+        "record_type": "cephas-release-witness-checkpoint-v2",
+        "checkpoint": cp.as_dict(),
+        "checkpoint_sha256": cp.checkpoint_sha256,
+        "operation_id": cp.operation_id,
+        "udf_id": "cephasReleaseWitnessCompareAndAppend",
+        "udf_sha256": "d" * 64,
+        "contract_version": "0.3.5",
+    }
+    transport.responses = [
+        {"code": "export function main() { return true; }"},
+        ACLProviderError("pre-hook rejected exact operation replay"),
+        {
+            "state": "Ready",
+            "entries": [{
+                "contents": __import__("json").dumps(entry_contents),
+                "transactionId": "2.77",
+                "collectionId": "cephas-release-witness-v2",
+            }],
+        },
+        {"state": "Committed", "transactionId": "2.77"},
+        {
+            "state": "Ready",
+            "transactionId": "2.77",
+            "receipt": {
+                "leafComponents": {"claimsDigest": "e" * 64, "writeSetDigest": "f" * 64}
+            },
+        },
+    ]
+    result = adapter(transport).append(
+        cp,
+        expected_previous_checkpoint_sha256=None,
+    )
+    assert result.transaction_id == "2.77"
+    assert transport.calls[2][0] == "GET"
+    assert "collectionId=cephas-release-witness-v2" in transport.calls[2][1]
+
+
+def test_adapter_rejects_reused_operation_id_with_different_checkpoint():
+    transport = FakeTransport()
+    cp = checkpoint()
+    different = dict(cp.as_dict())
+    different["artifact_sha256"] = "9" * 64
+    entry_contents = {
+        "record_type": "cephas-release-witness-checkpoint-v2",
+        "checkpoint": different,
+        "checkpoint_sha256": "9" * 64,
+        "operation_id": cp.operation_id,
+    }
+    transport.responses = [
+        {"code": "export function main() { return true; }"},
+        ACLProviderError("pre-hook rejected conflicting operation"),
+        {
+            "state": "Ready",
+            "entries": [{
+                "contents": __import__("json").dumps(entry_contents),
+                "transactionId": "2.78",
+            }],
+        },
+    ]
+    with pytest.raises(ACLConflict, match="different checkpoint"):
+        adapter(transport).append(
+            cp,
+            expected_previous_checkpoint_sha256=None,
+        )
