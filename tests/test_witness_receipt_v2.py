@@ -170,7 +170,6 @@ def test_v2_rejects_receipt_without_write_set_or_claims_digest_at_construction()
         )
 
 
-
 def signed_trust_bundle(active_cert, historical_cert, historical_status="historical"):
     private_key = ed25519.Ed25519PrivateKey.generate()
     payload = {
