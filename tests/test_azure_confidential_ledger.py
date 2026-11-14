@@ -46,6 +46,7 @@ def adapter(transport):
         service_identity_certificate_pem="pinned-cert",
         expected_udf_sha256="d" * 64,
         poll_interval_seconds=0,
+        native_receipt_verifier=lambda *_args, **_kwargs: None,
     )
 
 
@@ -69,6 +70,7 @@ def test_adapter_checks_pinned_udf_then_posts_hook_and_claims():
         service_identity_certificate_pem="pinned-cert",
         expected_udf_sha256=hashlib.sha256(code.encode()).hexdigest(),
         poll_interval_seconds=0,
+        native_receipt_verifier=lambda *_args, **_kwargs: None,
     )
     result = instance.append(
         checkpoint(),
@@ -100,6 +102,7 @@ def test_adapter_rejects_loading_receipt_until_ready_then_fails_closed():
         expected_udf_sha256=hashlib.sha256(code.encode()).hexdigest(),
         receipt_poll_attempts=1,
         poll_interval_seconds=0,
+        native_receipt_verifier=lambda *_args, **_kwargs: None,
     )
     transport.responses = [
         {"code": code},
