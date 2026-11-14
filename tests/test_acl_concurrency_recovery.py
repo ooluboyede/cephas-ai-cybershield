@@ -43,13 +43,20 @@ def make_checkpoint(operation_id: str = "gate25-operation-1", artifact: str = "b
 class ConcurrentFakeLedger:
     """Atomic fake of the minimal ACL operations used by the adapter."""
 
-    def __init__(self, *, lose_first_post_response: bool = False):
+    def __init__(
+        self,
+        *,
+        lose_first_post_response: bool = False,
+        lose_first_receipt_response: bool = False,
+    ):
         self.lock = threading.RLock()
         self.entries = []
         self.transactions = {}
         self.next_id = 1
         self.lose_first_post_response = lose_first_post_response
         self.lost_response = False
+        self.lose_first_receipt_response = lose_first_receipt_response
+        self.lost_receipt_response = False
         self.calls = []
 
     def request_json(self, method, path, body=None):
@@ -106,6 +113,9 @@ class ConcurrentFakeLedger:
                 if parts[4] == "status":
                     return {"state": self.transactions[transaction_id]["state"]}
                 if parts[4] == "receipt":
+                    if self.lose_first_receipt_response and not self.lost_receipt_response:
+                        self.lost_receipt_response = True
+                        raise ACLUnavailable("simulated receipt response loss after commit")
                     return {
                         "state": "Ready",
                         "transactionId": transaction_id,
@@ -185,13 +195,16 @@ def test_timeout_after_commit_recovers_original_transaction_and_receipt():
     )
 
 
-def test_replay_after_receipt_timeout_recovers_without_second_commit():
-    ledger = ConcurrentFakeLedger()
+def test_retry_after_receipt_timeout_recovers_without_second_commit():
+    ledger = ConcurrentFakeLedger(lose_first_receipt_response=True)
     instance = make_adapter(ledger)
     cp = make_checkpoint()
 
-    first = append(instance, cp)
-    second = append(instance, cp)
+    with pytest.raises(ACLUnavailable, match="receipt response loss"):
+        append(instance, cp)
 
-    assert first.transaction_id == second.transaction_id == "2.1"
+    recovered = append(instance, cp)
+
+    assert recovered.transaction_id == "2.1"
+    assert ledger.lost_receipt_response is True
     assert len(ledger.entries) == 1
