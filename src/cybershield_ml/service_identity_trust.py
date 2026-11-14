@@ -37,12 +37,13 @@ class ServiceIdentityTrustBundle:
 
     payload: dict[str, Any]
     signature_b64: str
-    signer_public_key_b64: str
 
-    def _verified_certificates(self) -> list[tuple[str, str, str]]:
+    def _verified_certificates(
+        self, pinned_signer_public_key_b64: str
+    ) -> list[tuple[str, str, str]]:
         try:
             signature = base64.b64decode(self.signature_b64, validate=True)
-            public_key_raw = base64.b64decode(self.signer_public_key_b64, validate=True)
+            public_key_raw = base64.b64decode(pinned_signer_public_key_b64, validate=True)
             public_key = Ed25519PublicKey.from_public_bytes(public_key_raw)
             public_key.verify(signature, _canonical_json(self.payload))
         except Exception as exc:
@@ -89,15 +90,23 @@ class ServiceIdentityTrustBundle:
             raise ValueError("trust bundle must identify exactly one active certificate")
         return parsed
 
-    def contains_issuance_identity(self, fingerprint: str) -> bool:
-        """Require the envelope's issuance identity to be customer-trusted and not revoked."""
-        return any(fp == fingerprint for fp, _pem, _status in self._verified_certificates())
+    def contains_issuance_identity(
+        self, fingerprint: str, pinned_signer_public_key_b64: str
+    ) -> bool:
+        """Require a customer-pinned signer and a trusted, non-revoked issuance identity."""
+        return any(
+            fp == fingerprint
+            for fp, _pem, _status in self._verified_certificates(
+                pinned_signer_public_key_b64
+            )
+        )
 
     def verify_native_receipt(
         self,
         receipt: dict[str, Any],
         application_claims: list[dict[str, Any]],
         verifier,
+        pinned_signer_public_key_b64: str,
     ) -> str:
         """Verify against customer-trusted anchors; return the successful anchor fingerprint.
 
@@ -105,7 +114,7 @@ class ServiceIdentityTrustBundle:
         serviceEndorsements chain up to each candidate customer-trusted anchor.
         Historical certificates are retained for receipts captured before rotation.
         """
-        certificates = self._verified_certificates()
+        certificates = self._verified_certificates(pinned_signer_public_key_b64)
         # Try active first, then historical anchors. Revoked entries were excluded.
         certificates.sort(key=lambda item: item[2] != "active")
         failures: list[Exception] = []
