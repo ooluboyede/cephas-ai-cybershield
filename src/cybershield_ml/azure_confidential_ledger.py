@@ -11,16 +11,16 @@ behavior before production use.
 """
 from __future__ import annotations
 
+import collections.abc
+import dataclasses
 import hashlib
 import json
 import ssl
 import time
+import typing
 import urllib.error
 import urllib.parse
 import urllib.request
-from collections.abc import Callable
-from dataclasses import dataclass
-from typing import Protocol
 
 from .release_witness import WitnessCheckpoint
 
@@ -45,7 +45,7 @@ class ACLConflict(ACLProviderError):
     """The UDF rejected a stale, conflicting, or unauthorized append."""
 
 
-class JSONTransport(Protocol):
+class JSONTransport(typing.Protocol):
     def request_json(self, method: str, path: str, body: dict | None = None) -> dict:
         """Perform an authenticated JSON request against the pinned ACL endpoint."""
 
@@ -62,7 +62,7 @@ class ACLHTTPSJSONTransport:
         self,
         *,
         endpoint: str,
-        token_provider: Callable[[], str],
+        token_provider: collections.abc.Callable[[], str],
         service_certificate_path: str,
         timeout_seconds: float = 10.0,
         api_version: str = API_VERSION,
@@ -128,7 +128,7 @@ class ACLHTTPSJSONTransport:
             raise ACLUnavailable("ACL request failed; commit outcome is not assumed") from exc
 
 
-@dataclass(frozen=True)
+@dataclasses.dataclass(frozen=True)
 class ACLAppendResult:
     transaction_id: str
     receipt_response: dict
@@ -170,7 +170,7 @@ class AzureConfidentialLedgerAdapter:
         commit_poll_attempts: int = 20,
         receipt_poll_attempts: int = 20,
         poll_interval_seconds: float = 1.0,
-        native_receipt_verifier: Callable | None = None,
+        native_receipt_verifier: collections.abc.Callable | None = None,
     ) -> None:
         if not service_identity_certificate_pem.strip():
             raise ValueError("out-of-band pinned ACL service identity certificate is required")
