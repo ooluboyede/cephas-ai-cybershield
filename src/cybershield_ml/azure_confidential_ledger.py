@@ -397,7 +397,7 @@ class AzureConfidentialLedgerAdapter:
         *,
         service_identity_certificate_pem: str,
         application_claims: list[dict],
-        native_receipt_verifier: Callable | None = None,
+        native_receipt_verifier: collections.abc.Callable | None = None,
     ) -> None:
         """Verify using Microsoft's offline ACL receipt verifier.
 
