@@ -91,7 +91,8 @@ class ACLHTTPSJSONTransport:
             raise ValueError("ACL path must be an absolute service-relative path")
         parsed_path = urllib.parse.urlsplit(path)
         query_items = urllib.parse.parse_qsl(parsed_path.query, keep_blank_values=True)
-        query_items.append(("api-version", self._api_version))
+        if not any(key == "api-version" for key, _ in query_items):
+            query_items.append(("api-version", self._api_version))
         query = urllib.parse.urlencode(query_items)
         url = f"{self._origin}{parsed_path.path}?{query}"
         token = self._token_provider()
@@ -289,6 +290,8 @@ class AzureConfidentialLedgerAdapter:
                     raise ACLProtocolError("operation ID is present in a different record type")
                 if payload.get("checkpoint_sha256") != checkpoint.checkpoint_sha256:
                     raise ACLConflict("operation ID already exists with a different checkpoint")
+                if payload.get("checkpoint") != checkpoint.as_dict():
+                    raise ACLProtocolError("matching checkpoint digest has inconsistent ledger contents")
                 matches.append(transaction_id)
             next_link = response.get("nextLink")
             if not next_link:
