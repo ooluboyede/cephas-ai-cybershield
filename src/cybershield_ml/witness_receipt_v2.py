@@ -183,7 +183,11 @@ class WitnessReceiptEnvelopeV2:
             raise ValueError("application claims scope mismatch")
 
         leaf = self.receipt.get("leafComponents")
-        if not isinstance(leaf, dict) or not leaf.get("writeSetDigest") or not leaf.get("claimsDigest"):
+        if (
+            not isinstance(leaf, dict)
+            or not leaf.get("writeSetDigest")
+            or not leaf.get("claimsDigest")
+        ):
             raise ValueError("receipt is missing writeSetDigest or claimsDigest")
         if native_receipt_verifier is None:
             try:
