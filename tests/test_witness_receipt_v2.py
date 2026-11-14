@@ -1,15 +1,21 @@
 import base64
 import hashlib
+import json
 
 import pytest
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.asymmetric import rsa
-from cryptography.hazmat.primitives.serialization import Encoding
+from cryptography.hazmat.primitives.asymmetric import rsa, ed25519
+from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 from cryptography.x509.oid import NameOID
 
 from cybershield_ml.release_witness import WitnessCheckpoint
 from cybershield_ml.witness_receipt_v2 import WitnessReceiptEnvelopeV2
+from cybershield_ml.service_identity_trust import (
+    BUNDLE_SCHEMA,
+    ServiceIdentityTrustBundle,
+    certificate_fingerprint_sha256,
+)
 
 
 def make_certificate():
@@ -162,3 +168,93 @@ def test_v2_rejects_receipt_without_write_set_or_claims_digest_at_construction()
             udf_id=item.udf_id,
             udf_sha256=item.udf_sha256,
         )
+
+
+
+def signed_trust_bundle(active_cert, historical_cert, historical_status="historical"):
+    private_key = ed25519.Ed25519PrivateKey.generate()
+    payload = {
+        "schema": BUNDLE_SCHEMA,
+        "version": 1,
+        "active_fingerprint_sha256": certificate_fingerprint_sha256(active_cert),
+        "certificates": [
+            {
+                "fingerprint_sha256": certificate_fingerprint_sha256(active_cert),
+                "certificate_pem": active_cert,
+                "status": "active",
+            },
+            {
+                "fingerprint_sha256": certificate_fingerprint_sha256(historical_cert),
+                "certificate_pem": historical_cert,
+                "status": historical_status,
+            },
+        ],
+    }
+    canonical = json.dumps(
+        payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+    ).encode("utf-8")
+    signature = base64.b64encode(private_key.sign(canonical)).decode("ascii")
+    public_key = base64.b64encode(
+        private_key.public_key().public_bytes(
+            Encoding.Raw, PublicFormat.Raw
+        )
+    ).decode("ascii")
+    return ServiceIdentityTrustBundle(
+        payload=payload,
+        signature_b64=signature,
+        signer_public_key_b64=public_key,
+    )
+
+
+def test_historical_receipt_verifies_with_customer_signed_rotation_bundle():
+    old_cert = make_certificate()
+    new_cert = make_certificate()
+    cp = checkpoint()
+    item = envelope(cp, old_cert)
+    trust_bundle = signed_trust_bundle(new_cert, old_cert)
+    attempts = []
+
+    def verifier(native, service_pem, *, application_claims):
+        attempts.append(service_pem)
+        if service_pem == new_cert:
+            raise ValueError("simulated missing endorsement path to current identity")
+
+    result = item.verify_offline(
+        pinned_service_identity_certificate_pem=None,
+        native_receipt_verifier=verifier,
+        expected_udf_sha256="d" * 64,
+        service_identity_trust_bundle=trust_bundle,
+    )
+    assert result == cp
+    assert attempts == [new_cert, old_cert]
+
+
+def test_rotation_bundle_rejects_revoked_issuance_identity():
+    old_cert = make_certificate()
+    new_cert = make_certificate()
+    item = envelope(checkpoint(), old_cert)
+    trust_bundle = signed_trust_bundle(new_cert, old_cert, historical_status="revoked")
+
+    with pytest.raises(ValueError, match="absent from the customer trust bundle"):
+        item.verify_offline(
+            pinned_service_identity_certificate_pem=None,
+            native_receipt_verifier=lambda *_args, **_kwargs: None,
+            expected_udf_sha256="d" * 64,
+            service_identity_trust_bundle=trust_bundle,
+        )
+
+
+def test_rotation_bundle_rejects_tampered_payload_signature():
+    old_cert = make_certificate()
+    new_cert = make_certificate()
+    trust_bundle = signed_trust_bundle(new_cert, old_cert)
+    tampered = dict(trust_bundle.payload)
+    tampered["active_fingerprint_sha256"] = "0" * 64
+    invalid = ServiceIdentityTrustBundle(
+        payload=tampered,
+        signature_b64=trust_bundle.signature_b64,
+        signer_public_key_b64=trust_bundle.signer_public_key_b64,
+    )
+
+    with pytest.raises(ValueError, match="signature verification failed"):
+        invalid.contains_issuance_identity(certificate_fingerprint_sha256(old_cert))
