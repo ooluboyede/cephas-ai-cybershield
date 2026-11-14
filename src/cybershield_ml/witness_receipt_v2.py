@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from cryptography import x509
+
 from .release_witness import WitnessCheckpoint, canonical_json
 
 
@@ -58,7 +59,7 @@ class WitnessReceiptEnvelopeV2:
         udf_id: str,
         udf_sha256: str,
         contract_version: str = "0.3.5",
-    ) -> "WitnessReceiptEnvelopeV2":
+    ) -> WitnessReceiptEnvelopeV2:
         from cryptography.hazmat.primitives.serialization import Encoding
 
         if receipt_response.get("state") != "Ready" or receipt_response.get("transactionId") != transaction_id:
@@ -115,21 +116,21 @@ class WitnessReceiptEnvelopeV2:
             raise ValueError("receipt claim does not contain the exact canonical checkpoint bytes")
 
         parsed = json.loads(canonical_bytes.decode("utf-8"))
-        checkpoint = WitnessCheckpoint(**{
-            "tenant_id": parsed["tenant_id"],
-            "deployment_id": parsed["deployment_id"],
-            "product": parsed["product"],
-            "release_sequence": parsed["release_sequence"],
-            "release_version": parsed["release_version"],
-            "metadata_sha256": parsed["metadata_sha256"],
-            "artifact_sha256": parsed["artifact_sha256"],
-            "publisher_key_id": parsed["publisher_key_id"],
-            "publisher_signature_sha256": parsed["publisher_signature_sha256"],
-            "previous_checkpoint_sha256": parsed["previous_checkpoint_sha256"],
-            "operation_id": parsed["operation_id"],
-            "protocol": parsed["protocol"],
-            "protocol_version": parsed["protocol_version"],
-        })
+        checkpoint = WitnessCheckpoint(
+            tenant_id=parsed["tenant_id"],
+            deployment_id=parsed["deployment_id"],
+            product=parsed["product"],
+            release_sequence=parsed["release_sequence"],
+            release_version=parsed["release_version"],
+            metadata_sha256=parsed["metadata_sha256"],
+            artifact_sha256=parsed["artifact_sha256"],
+            publisher_key_id=parsed["publisher_key_id"],
+            publisher_signature_sha256=parsed["publisher_signature_sha256"],
+            previous_checkpoint_sha256=parsed["previous_checkpoint_sha256"],
+            operation_id=parsed["operation_id"],
+            protocol=parsed["protocol"],
+            protocol_version=parsed["protocol_version"],
+        )
         if checkpoint.canonical_bytes() != canonical_bytes:
             raise ValueError("checkpoint bytes are not canonical under PR #9 v1 rules")
         claim = self.application_claims[0]
