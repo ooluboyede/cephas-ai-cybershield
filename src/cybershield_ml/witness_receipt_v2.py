@@ -43,8 +43,11 @@ class WitnessReceiptEnvelopeV2:
                 raise ValueError(f"{name} must be lowercase SHA-256 hex")
         if not isinstance(self.receipt, dict) or not self.receipt:
             raise ValueError("native receipt is required")
-        if not self.application_claims:
-            raise ValueError("application claims are mandatory; unhooked writes are rejected")
+        if len(self.application_claims) != 1 or not isinstance(self.application_claims[0], dict):
+            raise ValueError("exactly one structured application-claims object is required")
+        leaf = self.receipt.get("leafComponents")
+        if not isinstance(leaf, dict) or not leaf.get("writeSetDigest") or not leaf.get("claimsDigest"):
+            raise ValueError("native receipt must contain writeSetDigest and claimsDigest")
         if not self.udf_id or not self.contract_version:
             raise ValueError("UDF identity and contract version are required")
 
@@ -64,6 +67,17 @@ class WitnessReceiptEnvelopeV2:
 
         if receipt_response.get("state") != "Ready" or receipt_response.get("transactionId") != transaction_id:
             raise ValueError("receipt response must be Ready and bound to the supplied transaction ID")
+        if len(application_claims) != 1 or not isinstance(application_claims[0], dict):
+            raise ValueError("exactly one structured application-claims object is required")
+        claim = application_claims[0]
+        if claim.get("udf_id") != udf_id or claim.get("udf_sha256") != udf_sha256:
+            raise ValueError("application claims do not match the supplied UDF identity")
+        if claim.get("contract_version") != contract_version:
+            raise ValueError("application claims contract version mismatch")
+        if claim.get("schema") != "cephas.cybershield.acl-witness-claims.v2":
+            raise ValueError("unrecognized ACL application-claims schema")
+        if claim.get("checkpoint_canonical_utf8") is None:
+            raise ValueError("application claims omit canonical checkpoint bytes")
         cert = x509.load_pem_x509_certificate(service_identity_certificate_pem.encode("utf-8"))
         cert_der = cert.public_bytes(Encoding.DER)
         claim_bytes = canonical_json({"applicationClaims": application_claims})
@@ -88,7 +102,7 @@ class WitnessReceiptEnvelopeV2:
         *,
         pinned_service_identity_certificate_pem: str,
         native_receipt_verifier=None,
-        expected_udf_sha256: str | None = None,
+        expected_udf_sha256: str,
     ) -> WitnessCheckpoint:
         """Verify envelope claims and provider proof without network access."""
         from cryptography.hazmat.primitives.serialization import Encoding
@@ -133,6 +147,8 @@ class WitnessReceiptEnvelopeV2:
         )
         if checkpoint.canonical_bytes() != canonical_bytes:
             raise ValueError("checkpoint bytes are not canonical under PR #9 v1 rules")
+        if len(self.application_claims) != 1 or not isinstance(self.application_claims[0], dict):
+            raise ValueError("receipt must contain exactly one structured application-claims object")
         claim = self.application_claims[0]
         if claim.get("schema") != "cephas.cybershield.acl-witness-claims.v2":
             raise ValueError("missing approved CEPHAS ACL application-claims schema")
@@ -140,7 +156,11 @@ class WitnessReceiptEnvelopeV2:
             raise ValueError("application claims do not bind the envelope UDF identity")
         if claim.get("contract_version") != self.contract_version:
             raise ValueError("application claims contract version mismatch")
-        if expected_udf_sha256 is not None and expected_udf_sha256 != self.udf_sha256:
+        if (
+            len(expected_udf_sha256) != 64
+            or any(c not in "0123456789abcdef" for c in expected_udf_sha256)
+            or expected_udf_sha256 != self.udf_sha256
+        ):
             raise ValueError("UDF digest does not match the independently pinned expected digest")
         if claim.get("checkpoint_sha256") != checkpoint.checkpoint_sha256:
             raise ValueError("application claims do not bind the checkpoint digest")
