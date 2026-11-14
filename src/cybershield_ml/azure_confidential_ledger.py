@@ -174,8 +174,10 @@ class AzureConfidentialLedgerAdapter:
     ) -> None:
         if not service_identity_certificate_pem.strip():
             raise ValueError("out-of-band pinned ACL service identity certificate is required")
-        if not udf_id or len(udf_id) > 128:
-            raise ValueError("invalid UDF id")
+        if udf_id != DEFAULT_UDF_ID:
+            raise ValueError("this Gate 2.3 adapter requires the approved fixed UDF id")
+        if collection_id != "cephas-release-witness-v2":
+            raise ValueError("this Gate 2.3 UDF is restricted to its approved collection")
         if len(expected_udf_sha256) != 64 or any(
             c not in "0123456789abcdef" for c in expected_udf_sha256
         ):
