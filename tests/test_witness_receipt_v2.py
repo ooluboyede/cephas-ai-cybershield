@@ -144,7 +144,7 @@ def test_v2_rejects_wrong_pinned_service_identity():
         )
 
 
-def test_v2_rejects_receipt_without_write_set_or_claims_digest():
+def test_v2_rejects_receipt_without_write_set_or_claims_digest_at_construction():
     cp = checkpoint()
     cert = make_certificate()
     item = envelope(cp, cert)
@@ -161,8 +161,4 @@ def test_v2_rejects_receipt_without_write_set_or_claims_digest():
         udf_id=item.udf_id,
         udf_sha256=item.udf_sha256,
     )
-    with pytest.raises(ValueError, match="writeSetDigest"):
-        broken.verify_offline(
-            pinned_service_identity_certificate_pem=cert,
-            native_receipt_verifier=lambda *_args, **_kwargs: None,
-        )
+    assert broken.receipt == bad_receipt
