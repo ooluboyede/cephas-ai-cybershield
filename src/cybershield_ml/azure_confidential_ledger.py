@@ -11,6 +11,10 @@ behavior before production use.
 """
 from __future__ import annotations
 
+from collections.abc import Callable
+from dataclasses import dataclass
+from typing import Protocol
+
 import hashlib
 import json
 import ssl
@@ -18,9 +22,6 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from collections.abc import Callable
-from dataclasses import dataclass
-from typing import Protocol
 
 from .release_witness import WitnessCheckpoint
 
