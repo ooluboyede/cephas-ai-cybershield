@@ -108,8 +108,7 @@ export function main() {
     const operationRecord = {
         checkpoint_sha256: canonicalDigest,
         release_sequence: cp.release_sequence,
-        operation_id: cp.operation_id,
-        transaction_id: null
+        operation_id: cp.operation_id
     };
     const headRecord = {
         release_sequence: cp.release_sequence,
