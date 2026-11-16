@@ -4,7 +4,7 @@ The bundle is an out-of-band trust input. Certificates copied from a receipt are
 added to trust automatically. Historical certificates are retained for offline recovery;
 revoked certificates are never considered verification anchors.
 """
-from __future__ import annotations
+from __future__ import annotations  # noqa: I001
 
 import base64
 import hashlib
