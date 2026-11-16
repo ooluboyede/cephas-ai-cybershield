@@ -109,19 +109,40 @@ class WitnessReceiptEnvelopeV2:
     def verify_offline(
         self,
         *,
-        pinned_service_identity_certificate_pem: str,
+        pinned_service_identity_certificate_pem: str | None = None,
         native_receipt_verifier=None,
         expected_udf_sha256: str,
+        service_identity_trust_bundle=None,
+        pinned_trust_bundle_signer_public_key_b64: str | None = None,
     ) -> WitnessCheckpoint:
         """Verify envelope claims and provider proof without network access."""
         from cryptography.hazmat.primitives.serialization import Encoding
 
-        cert = x509.load_pem_x509_certificate(
-            pinned_service_identity_certificate_pem.encode("utf-8")
-        )
-        cert_digest = hashlib.sha256(cert.public_bytes(Encoding.DER)).hexdigest()
-        if cert_digest != self.service_identity_sha256:
-            raise ValueError("pinned service identity certificate fingerprint mismatch")
+        if service_identity_trust_bundle is not None:
+            if not pinned_trust_bundle_signer_public_key_b64:
+                raise ValueError(
+                    "customer trust-bundle signer public key must be pinned out of band"
+                )
+            if not service_identity_trust_bundle.contains_issuance_identity(
+                self.service_identity_sha256,
+                pinned_trust_bundle_signer_public_key_b64,
+            ):
+                raise ValueError(
+                    "receipt issuance identity is absent from the customer trust bundle "
+                    "or has been revoked"
+                )
+        else:
+            if not pinned_service_identity_certificate_pem:
+                raise ValueError(
+                    "provide a pinned service identity certificate or a customer-signed "
+                    "service identity trust bundle"
+                )
+            cert = x509.load_pem_x509_certificate(
+                pinned_service_identity_certificate_pem.encode("utf-8")
+            )
+            cert_digest = hashlib.sha256(cert.public_bytes(Encoding.DER)).hexdigest()
+            if cert_digest != self.service_identity_sha256:
+                raise ValueError("pinned service identity certificate fingerprint mismatch")
 
         expected_claims_digest = hashlib.sha256(
             canonical_json({"applicationClaims": self.application_claims})
@@ -199,11 +220,19 @@ class WitnessReceiptEnvelopeV2:
             native_receipt_verifier = verify_receipt
         # Microsoft SDK verifies the CCF Merkle proof, service endorsement chain,
         # write-set digest and the supplied application-claims digest.
-        native_receipt_verifier(
-            self.receipt,
-            pinned_service_identity_certificate_pem,
-            application_claims=self.application_claims,
-        )
+        if service_identity_trust_bundle is not None:
+            service_identity_trust_bundle.verify_native_receipt(
+                self.receipt,
+                self.application_claims,
+                native_receipt_verifier,
+                pinned_trust_bundle_signer_public_key_b64,
+            )
+        else:
+            native_receipt_verifier(
+                self.receipt,
+                pinned_service_identity_certificate_pem,
+                application_claims=self.application_claims,
+            )
         return checkpoint
 
     def as_dict(self) -> dict[str, Any]:
