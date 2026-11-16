@@ -3,7 +3,6 @@
 These tests exercise adapter behavior against a deterministic, thread-safe fake
 ledger. They do not substitute for concurrency testing against a live CCF ledger.
 """
-
 from __future__ import annotations
 
 import concurrent.futures
