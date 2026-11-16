@@ -261,3 +261,58 @@ def test_rotation_bundle_rejects_tampered_payload_signature():
         invalid.contains_issuance_identity(
             certificate_fingerprint_sha256(old_cert), signer_public_key
         )
+
+
+
+def test_v2_rejects_mutated_application_claim_after_envelope_creation():
+    cp = checkpoint()
+    cert = make_certificate()
+    item = envelope(cp, cert)
+    item.application_claims[0]["tenant_id"] = "tenant-attacker"
+
+    with pytest.raises(ValueError, match="claims digest"):
+        item.verify_offline(
+            pinned_service_identity_certificate_pem=cert,
+            native_receipt_verifier=lambda *_args, **_kwargs: None,
+            expected_udf_sha256="d" * 64,
+        )
+
+
+def test_v2_rejects_modified_canonical_checkpoint_bytes():
+    cp = checkpoint()
+    cert = make_certificate()
+    item = envelope(cp, cert)
+    altered = bytearray(base64.b64decode(item.checkpoint_canonical_b64))
+    altered[-2] = ord(" ")
+    tampered = WitnessReceiptEnvelopeV2(
+        provider_type=item.provider_type,
+        envelope_version=item.envelope_version,
+        transaction_id=item.transaction_id,
+        claims_digest=item.claims_digest,
+        checkpoint_canonical_b64=base64.b64encode(altered).decode("ascii"),
+        receipt=item.receipt,
+        application_claims=item.application_claims,
+        service_identity_sha256=item.service_identity_sha256,
+        udf_id=item.udf_id,
+        udf_sha256=item.udf_sha256,
+    )
+
+    with pytest.raises(ValueError, match="canonical checkpoint digest"):
+        tampered.verify_offline(
+            pinned_service_identity_certificate_pem=cert,
+            native_receipt_verifier=lambda *_args, **_kwargs: None,
+            expected_udf_sha256="d" * 64,
+        )
+
+
+def test_v2_rejects_independently_pinned_udf_digest_mismatch():
+    cp = checkpoint()
+    cert = make_certificate()
+    item = envelope(cp, cert)
+
+    with pytest.raises(ValueError, match="UDF digest"):
+        item.verify_offline(
+            pinned_service_identity_certificate_pem=cert,
+            native_receipt_verifier=lambda *_args, **_kwargs: None,
+            expected_udf_sha256="0" * 64,
+        )
