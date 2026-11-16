@@ -118,7 +118,7 @@ def test_v2_rejects_unhooked_or_claimless_receipt():
     cp = checkpoint()
     cert = make_certificate()
     item = envelope(cp, cert)
-    with pytest.raises(ValueError, match="application claims"):
+    with pytest.raises(ValueError, match="application[- ]claims"):
         WitnessReceiptEnvelopeV2(
             provider_type=item.provider_type,
             envelope_version=2,
