@@ -2,15 +2,16 @@ from __future__ import annotations
 
 import json
 import ssl
+from pathlib import Path
 
 from scripts.acl_live_preflight import validate_config
 
 
 def valid_environment(tmp_path):
     ca_path = tmp_path / "ca.pem"
-    ca_path.write_text(ssl.get_default_verify_paths().cafile and open(
-        ssl.get_default_verify_paths().cafile, encoding="utf-8"
-    ).read() or "", encoding="utf-8")
+    system_ca = ssl.get_default_verify_paths().cafile
+    assert system_ca is not None
+    ca_path.write_text(Path(system_ca).read_text(encoding="utf-8"), encoding="utf-8")
     identity_path = tmp_path / "identity.pem"
     identity_path.write_text(
         "-----BEGIN CERTIFICATE-----\nTEST-FIXTURE\n-----END CERTIFICATE-----\n",
