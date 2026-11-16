@@ -207,3 +207,55 @@ def test_retry_after_receipt_timeout_recovers_without_second_commit():
     assert recovered.transaction_id == "2.1"
     assert ledger.lost_receipt_response is True
     assert len(ledger.entries) == 1
+
+
+
+def test_native_receipt_verifier_receives_pinned_identity_and_exact_claims():
+    ledger = ConcurrentFakeLedger()
+    captured = []
+
+    def verifier(receipt, certificate_pem, *, application_claims):
+        captured.append((receipt, certificate_pem, application_claims))
+
+    instance = AzureConfidentialLedgerAdapter(
+        transport=ledger,
+        service_identity_certificate_pem="out-of-band-pinned-test-identity",
+        expected_udf_sha256=hashlib.sha256(UDF_CODE.encode()).hexdigest(),
+        poll_interval_seconds=0,
+        native_receipt_verifier=verifier,
+        commit_poll_attempts=2,
+        receipt_poll_attempts=2,
+    )
+    cp = make_checkpoint()
+
+    result = append(instance, cp)
+
+    assert len(captured) == 1
+    receipt, certificate_pem, claims = captured[0]
+    assert receipt == result.receipt_response["receipt"]
+    assert certificate_pem == "out-of-band-pinned-test-identity"
+    assert claims == result.application_claims
+    assert claims[0]["checkpoint_sha256"] == cp.checkpoint_sha256
+
+
+def test_native_receipt_verification_failure_prevents_success_acknowledgement():
+    ledger = ConcurrentFakeLedger()
+
+    def reject_receipt(*_args, **_kwargs):
+        raise ValueError("simulated invalid Merkle proof")
+
+    instance = AzureConfidentialLedgerAdapter(
+        transport=ledger,
+        service_identity_certificate_pem="out-of-band-pinned-test-identity",
+        expected_udf_sha256=hashlib.sha256(UDF_CODE.encode()).hexdigest(),
+        poll_interval_seconds=0,
+        native_receipt_verifier=reject_receipt,
+        commit_poll_attempts=2,
+        receipt_poll_attempts=2,
+    )
+
+    with pytest.raises(ValueError, match="invalid Merkle proof"):
+        append(instance, make_checkpoint())
+
+    # The fake ledger committed, but the adapter did not return a success result.
+    assert len(ledger.entries) == 1
