@@ -46,7 +46,7 @@ def adapter(transport):
     return AzureConfidentialLedgerAdapter(
         transport=transport,
         service_identity_certificate_pem="pinned-cert",
-        expected_udf_sha256="d" * 64,
+        expected_udf_sha256=hashlib.sha256(b"export function main() { return true; }").hexdigest(),
         poll_interval_seconds=0,
         native_receipt_verifier=lambda *_args, **_kwargs: None,
     )
