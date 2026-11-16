@@ -5,17 +5,17 @@ import json
 import pytest
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.asymmetric import rsa, ed25519
+from cryptography.hazmat.primitives.asymmetric import ed25519, rsa
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 from cryptography.x509.oid import NameOID
 
-from cybershield_ml.release_witness import WitnessCheckpoint
-from cybershield_ml.witness_receipt_v2 import WitnessReceiptEnvelopeV2
 from cybershield_ml.service_identity_trust import (
     BUNDLE_SCHEMA,
     ServiceIdentityTrustBundle,
     certificate_fingerprint_sha256,
 )
+from cybershield_ml.release_witness import WitnessCheckpoint
+from cybershield_ml.witness_receipt_v2 import WitnessReceiptEnvelopeV2
 
 
 def make_certificate():
