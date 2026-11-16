@@ -9,6 +9,7 @@ This module is an implementation candidate. A live customer-controlled ACL
 ledger is still required to validate the deployed UDF, RBAC, hooks and API
 behavior before production use.
 """
+
 from __future__ import annotations
 
 import collections.abc
@@ -371,7 +372,7 @@ class AzureConfidentialLedgerAdapter:
             except ACLProviderError:
                 raise write_error
             if transaction_id is None:
-                raise write_error
+                raise
         else:
             transaction_id = response.get("transactionId")
             if not isinstance(transaction_id, str) or not transaction_id:
