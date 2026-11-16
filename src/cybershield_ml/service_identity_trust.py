@@ -4,6 +4,7 @@ The bundle is an out-of-band trust input. Certificates copied from a receipt are
 added to trust automatically. Historical certificates are retained for offline recovery;
 revoked certificates are never considered verification anchors.
 """
+
 from __future__ import annotations
 
 import base64
@@ -42,7 +43,7 @@ class ServiceIdentityTrustBundle:
         self, pinned_signer_public_key_b64: str
     ) -> list[tuple[str, str, str]]:
         if not isinstance(self.payload, dict):
-            raise ValueError("trust-bundle payload must be a JSON object")
+            raise TypeError("trust-bundle payload must be a JSON object")
         try:
             signature = base64.b64decode(self.signature_b64, validate=True)
             public_key_raw = base64.b64decode(pinned_signer_public_key_b64, validate=True)
@@ -62,7 +63,7 @@ class ServiceIdentityTrustBundle:
         active: list[str] = []
         for entry in entries:
             if not isinstance(entry, dict):
-                raise ValueError("trust-bundle certificate entry must be an object")
+                raise TypeError("trust-bundle certificate entry must be an object")
             fingerprint = entry.get("fingerprint_sha256")
             pem = entry.get("certificate_pem")
             status = entry.get("status")
@@ -124,7 +125,7 @@ class ServiceIdentityTrustBundle:
             try:
                 verifier(receipt, pem, application_claims=application_claims)
                 return fingerprint
-            except Exception as exc:  # SDK exposes provider-specific verification errors.
+            except Exception as exc:  # noqa: BLE001 - SDK exposes provider-specific verification errors.
                 failures.append(exc)
         raise ValueError(
             "native ACL receipt did not verify against any customer-trusted, non-revoked "
