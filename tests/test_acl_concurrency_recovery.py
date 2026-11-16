@@ -1,5 +1,7 @@
 """Concurrency and uncertain-write recovery tests for the ACL adapter.
 
+# Temporary CI diagnostic trigger.
+
 These tests exercise adapter behavior against a deterministic, thread-safe fake
 ledger. They do not substitute for concurrency testing against a live CCF ledger.
 """
