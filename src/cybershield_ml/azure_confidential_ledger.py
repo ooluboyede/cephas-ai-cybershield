@@ -9,7 +9,6 @@ This module is an implementation candidate. A live customer-controlled ACL
 ledger is still required to validate the deployed UDF, RBAC, hooks and API
 behavior before production use.
 """
-
 from __future__ import annotations
 
 import collections.abc
