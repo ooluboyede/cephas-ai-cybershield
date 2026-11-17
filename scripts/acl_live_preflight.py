@@ -3,7 +3,7 @@
 This script validates local configuration only. It performs no network requests,
 does not acquire tokens, and never prints configured values or certificate data.
 """
-from __future__ import annotations
+from __future__ import annotations  # noqa: I001
 
 import argparse
 import json
