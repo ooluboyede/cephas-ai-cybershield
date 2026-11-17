@@ -14,11 +14,15 @@ import sys
 from pathlib import Path
 from urllib.parse import urlsplit
 
+from cryptography import x509
+from cryptography.hazmat.primitives import hashes
+
 
 REQUIRED = (
     "CEPHAS_ACL_ENDPOINT",
     "CEPHAS_ACL_CA_BUNDLE",
     "CEPHAS_ACL_SERVICE_IDENTITY_CERT",
+    "CEPHAS_ACL_SERVICE_IDENTITY_CERT_SHA256",
     "CEPHAS_ACL_UDF_SHA256",
     "CEPHAS_ACL_COLLECTION_ID",
 )
@@ -33,43 +37,54 @@ def validate_config(env: dict[str, str] | None = None, *, require_sdk: bool = Fa
 
     endpoint = values.get("CEPHAS_ACL_ENDPOINT", "").strip()
     if endpoint:
-        parsed = urlsplit(endpoint)
-        if (
-            parsed.scheme != "https"
-            or not parsed.hostname
-            or parsed.username
-            or parsed.password
-            or parsed.path not in ("", "/")
-            or parsed.query
-            or parsed.fragment
-        ):
+        try:
+            parsed = urlsplit(endpoint)
+            valid_endpoint = (
+                parsed.scheme == "https"
+                and bool(parsed.hostname)
+                and parsed.username is None
+                and parsed.password is None
+                and parsed.port in (None, 443)
+                and parsed.path in ("", "/")
+                and not parsed.query
+                and not parsed.fragment
+            )
+        except ValueError:
+            valid_endpoint = False
+        if not valid_endpoint:
             errors.append("invalid:CEPHAS_ACL_ENDPOINT")
 
     ca_path = values.get("CEPHAS_ACL_CA_BUNDLE", "").strip()
     if ca_path:
-        path = Path(ca_path)
-        if not path.is_file() or not path.stat().st_size:
+        try:
+            path = Path(ca_path)
+            if not path.is_file() or not path.stat().st_size:
+                raise OSError("CA bundle is not a non-empty file")
+            ssl.create_default_context(cafile=str(path))
+        except (OSError, ssl.SSLError):
             errors.append("invalid:CEPHAS_ACL_CA_BUNDLE")
-        else:
-            try:
-                ssl.create_default_context(cafile=str(path))
-            except (OSError, ssl.SSLError):
-                errors.append("invalid:CEPHAS_ACL_CA_BUNDLE")
 
     identity_path = values.get("CEPHAS_ACL_SERVICE_IDENTITY_CERT", "").strip()
+    expected_fingerprint = values.get(
+        "CEPHAS_ACL_SERVICE_IDENTITY_CERT_SHA256", ""
+    ).strip()
+    if expected_fingerprint and not re.fullmatch(r"[0-9a-f]{64}", expected_fingerprint):
+        errors.append("invalid:CEPHAS_ACL_SERVICE_IDENTITY_CERT_SHA256")
+
     if identity_path:
-        path = Path(identity_path)
         try:
-            certificate = path.read_text(encoding="utf-8")
-        except (OSError, UnicodeError):
+            certificate_bytes = Path(identity_path).read_bytes()
+            certificate = x509.load_pem_x509_certificate(certificate_bytes)
+            actual_fingerprint = certificate.fingerprint(hashes.SHA256()).hex()
+        except (OSError, ValueError):
             errors.append("invalid:CEPHAS_ACL_SERVICE_IDENTITY_CERT")
         else:
             if (
-                not certificate.strip()
-                or "-----BEGIN CERTIFICATE-----" not in certificate
-                or "-----END CERTIFICATE-----" not in certificate
+                expected_fingerprint
+                and re.fullmatch(r"[0-9a-f]{64}", expected_fingerprint)
+                and actual_fingerprint != expected_fingerprint
             ):
-                errors.append("invalid:CEPHAS_ACL_SERVICE_IDENTITY_CERT")
+                errors.append("mismatch:CEPHAS_ACL_SERVICE_IDENTITY_CERT_SHA256")
 
     udf_digest = values.get("CEPHAS_ACL_UDF_SHA256", "").strip()
     if udf_digest and not re.fullmatch(r"[0-9a-f]{64}", udf_digest):
