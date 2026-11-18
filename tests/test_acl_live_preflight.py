@@ -16,15 +16,17 @@ from scripts.acl_live_preflight import validate_config
 def make_certificate():
     key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "CEPHAS test identity")])
-    now = datetime.now(timezone.utc)
+    # CertificateBuilder's legacy setters accept naive UTC datetimes across the
+    # repository's locked cryptography range; derive them from an aware UTC clock.
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
     certificate = (
         x509.CertificateBuilder()
         .subject_name(name)
         .issuer_name(name)
         .public_key(key.public_key())
         .serial_number(x509.random_serial_number())
-        .not_valid_before_utc(now - timedelta(minutes=1))
-        .not_valid_after_utc(now + timedelta(days=1))
+        .not_valid_before(now - timedelta(minutes=1))
+        .not_valid_after(now + timedelta(days=1))
         .sign(key, hashes.SHA256())
     )
     return certificate.public_bytes(serialization.Encoding.PEM), certificate.fingerprint(
