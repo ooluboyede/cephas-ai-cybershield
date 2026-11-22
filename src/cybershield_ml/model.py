@@ -11,6 +11,7 @@ from sklearn.ensemble import IsolationForest
 from . import FEATURE_SCHEMA_VERSION, MODEL_METADATA_SCHEMA_VERSION, __version__
 from .features import FEATURE_COLUMNS
 from .release_state import ReleaseStateStore
+from .release_anchor import WitnessedReleaseStateStore
 from .signing import verify_model_signature
 
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
@@ -208,7 +209,7 @@ def load_model(
         raise ValueError("model metadata does not match the authenticated deployment")
     if dict(trusted_public_keys) != dict(trusted_publisher_keyring.public_keys):
         raise ValueError("unscoped publisher keys cannot override the deployment keyring")
-    verify_model_signature(path, metadata, trusted_publisher_keyring.public_keys)
+    publisher_key_id = verify_model_signature(path, metadata, trusted_publisher_keyring.public_keys)
     artifact_path = path / "isolation_forest.joblib"
     if artifact_path.is_symlink() or not artifact_path.is_file():
         raise ValueError("model artifact must be a regular, non-symlink file")
@@ -216,12 +217,22 @@ def load_model(
     if actual_sha256 != metadata["artifact_sha256"]:
         raise ValueError("model artifact SHA-256 verification failed")
     # Atomic customer-side compare-and-set; reject rollback before deserialization.
+    if not isinstance(release_state_store, WitnessedReleaseStateStore):
+        raise TypeError("model loading requires a witness-first release-state store")
+    signature_bytes = (path / "model_signature.json").read_bytes()
     release_state_store.accept_release(
         tenant_id=tenant_id,
         deployment_id=deployment_context.deployment_id,
         product=metadata["product"],
         release_sequence=metadata["release_sequence"],
         version=metadata["version"],
+        metadata_sha256=hashlib.sha256((path / "model_metadata.json").read_bytes()).hexdigest(),
+        artifact_sha256=actual_sha256,
+        publisher_key_id=publisher_key_id,
+        publisher_signature_sha256=hashlib.sha256(signature_bytes).hexdigest(),
+        operation_id="model-release-" + hashlib.sha256(
+            f"{deployment_context.deployment_id}:{metadata['release_sequence']}:{actual_sha256}".encode("utf-8")
+        ).hexdigest()[:48],
     )
     # Deserialization occurs only after signature, digest and anti-rollback checks.
     try:
