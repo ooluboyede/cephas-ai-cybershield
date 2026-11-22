@@ -1,4 +1,5 @@
 """Verify a signed, hash-indexed Azure ACL live-evidence manifest offline."""
+# ruff: noqa: I001 — preserve the established future-import block; Ruff 0.17.4 flags it.
 from __future__ import annotations
 
 import argparse
