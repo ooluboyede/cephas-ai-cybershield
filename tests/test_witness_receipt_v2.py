@@ -71,6 +71,7 @@ def receipt():
         "leafComponents": {
             "claimsDigest": "f" * 64,
             "writeSetDigest": "e" * 64,
+            "commitEvidence": "ce:2.42:" + "a" * 64,
         },
         "proof": {},
         "signature": "signature",
@@ -117,7 +118,15 @@ def test_v2_envelope_verifies_checkpoint_and_native_receipt_offline():
     )
     assert result == cp
     assert called["native"] == receipt()
-    assert called["claims"] == claims(cp)
+    assert called["claims"] == [{
+        "kind": "ClaimDigest",
+        "protocol": "cephas.cybershield.acl-witness-claims.v2",
+        "value": hashlib.sha256(
+            json.dumps(
+                claims(cp)[0], sort_keys=True, separators=(",", ":"), ensure_ascii=False
+            ).encode("utf-8")
+        ).hexdigest(),
+    }]
 
 
 def test_v2_rejects_unhooked_or_claimless_receipt():
@@ -315,4 +324,32 @@ def test_v2_rejects_independently_pinned_udf_digest_mismatch():
             pinned_service_identity_certificate_pem=cert,
             native_receipt_verifier=lambda *_args, **_kwargs: None,
             expected_udf_sha256="0" * 64,
+        )
+
+
+
+def test_v2_rejects_commit_evidence_transaction_id_substitution():
+    cp = checkpoint()
+    cert = make_certificate()
+    item = envelope(cp, cert)
+    altered_receipt = dict(item.receipt)
+    altered_receipt["leafComponents"] = dict(item.receipt["leafComponents"])
+    altered_receipt["leafComponents"]["commitEvidence"] = "ce:2.99:" + "a" * 64
+    tampered = WitnessReceiptEnvelopeV2(
+        provider_type=item.provider_type,
+        envelope_version=item.envelope_version,
+        transaction_id=item.transaction_id,
+        claims_digest=item.claims_digest,
+        checkpoint_canonical_b64=item.checkpoint_canonical_b64,
+        receipt=altered_receipt,
+        application_claims=item.application_claims,
+        service_identity_sha256=item.service_identity_sha256,
+        udf_id=item.udf_id,
+        udf_sha256=item.udf_sha256,
+    )
+    with pytest.raises(ValueError, match="transaction ID"):
+        tampered.verify_offline(
+            pinned_service_identity_certificate_pem=cert,
+            native_receipt_verifier=lambda *_args, **_kwargs: None,
+            expected_udf_sha256="d" * 64,
         )
