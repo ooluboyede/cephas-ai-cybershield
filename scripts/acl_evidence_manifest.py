@@ -1,12 +1,13 @@
 """Verify a signed, hash-indexed Azure ACL live-evidence manifest offline."""
 from __future__ import annotations
 
+from datetime import datetime
+from pathlib import Path, PurePosixPath
+
 import argparse
 import hashlib
 import json
 import sys
-from datetime import datetime
-from pathlib import Path, PurePosixPath
 
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import serialization
