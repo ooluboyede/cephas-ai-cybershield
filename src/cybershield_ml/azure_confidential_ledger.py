@@ -402,7 +402,7 @@ class AzureConfidentialLedgerAdapter:
         return ACLAppendResult(
             transaction_id=transaction_id,
             receipt_response=receipt,
-            application_claims=[claim],
+            application_claims=[structured_claim],
         )
 
     @staticmethod
