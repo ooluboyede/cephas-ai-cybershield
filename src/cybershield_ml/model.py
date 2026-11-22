@@ -10,8 +10,8 @@ from sklearn.ensemble import IsolationForest
 
 from . import FEATURE_SCHEMA_VERSION, MODEL_METADATA_SCHEMA_VERSION, __version__
 from .features import FEATURE_COLUMNS
-from .release_state import ReleaseStateStore
 from .release_anchor import WitnessedReleaseStateStore
+from .release_state import ReleaseStateStore
 from .signing import verify_model_signature
 
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
@@ -231,7 +231,7 @@ def load_model(
         publisher_key_id=publisher_key_id,
         publisher_signature_sha256=hashlib.sha256(signature_bytes).hexdigest(),
         operation_id="model-release-" + hashlib.sha256(
-            f"{deployment_context.deployment_id}:{metadata['release_sequence']}:{actual_sha256}".encode("utf-8")
+            f"{deployment_context.deployment_id}:{metadata['release_sequence']}:{actual_sha256}".encode()
         ).hexdigest()[:48],
     )
     # Deserialization occurs only after signature, digest and anti-rollback checks.
