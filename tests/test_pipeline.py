@@ -14,6 +14,7 @@ from cybershield_ml.model import fingerprint, save_model, score, train_model
 from cybershield_ml.model import load_model as _load_model
 from cybershield_ml.signing import sign_model
 from cybershield_ml.trust_context import DeploymentTrustContext, TrustedPublisherKeyring
+from cybershield_ml.release_anchor import WitnessedReleaseStateStore
 
 
 class MemoryReleaseStateStore:
@@ -34,9 +35,26 @@ class MemoryReleaseStateStore:
         self.state[key] = (release_sequence, version)
 
 
+class TestWitnessedReleaseStateStore(WitnessedReleaseStateStore):
+    """Class-A model-loader test double; provider protocol is tested separately."""
+
+    def __init__(self):
+        self.state = {}
+
+    def accept_release(self, *, tenant_id, deployment_id, product, release_sequence, version, **_):
+        key = (tenant_id, deployment_id, product)
+        current = self.state.get(key)
+        if current is not None and (
+            release_sequence < current[0]
+            or (release_sequence == current[0] and version != current[1])
+        ):
+            raise ValueError("stale or conflicting witnessed release")
+        self.state[key] = (release_sequence, version)
+
+
 def load_model(*args, **kwargs):
     """Use isolated test trust objects and state unless a test supplies explicit ones."""
-    kwargs.setdefault("release_state_store", MemoryReleaseStateStore())
+    kwargs.setdefault("release_state_store", TestWitnessedReleaseStateStore())
     tenant_id = kwargs.get("tenant_id", args[1] if len(args) > 1 else None)
     public_keys = kwargs.get("trusted_public_keys", args[2] if len(args) > 2 else None)
     kwargs.setdefault(
