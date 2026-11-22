@@ -1,4 +1,4 @@
-""""Verify a signed, hash-indexed Azure ACL live-evidence manifest offline."""
+"""Verify a signed, hash-indexed Azure ACL live-evidence manifest offline."""
 
 import argparse
 import hashlib
