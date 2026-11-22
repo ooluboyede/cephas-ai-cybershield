@@ -197,7 +197,7 @@ class WitnessedReleaseStateStore:
         checkpoint, receipt = observed
         from .release_witness import WitnessCheckpoint
         if not isinstance(checkpoint, WitnessCheckpoint):
-            raise RuntimeError("witness returned an invalid checkpoint")
+            raise TypeError("witness returned an invalid checkpoint")
         if (checkpoint.tenant_id, checkpoint.deployment_id, checkpoint.product) != (
             scope["tenant_id"], scope["deployment_id"], scope["product"]
         ):
