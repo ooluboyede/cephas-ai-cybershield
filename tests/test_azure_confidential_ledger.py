@@ -1,4 +1,5 @@
 import hashlib
+import json
 
 import pytest
 
@@ -82,7 +83,18 @@ def test_adapter_checks_pinned_udf_then_posts_hook_and_claims():
     assert transport.calls[0][0] == "GET"
     post = transport.calls[1][2]
     assert post["preHooks"] == [{"functionId": "cephasReleaseWitnessCompareAndAppend"}]
-    assert post["applicationClaims"][0]["checkpoint_sha256"] == checkpoint().checkpoint_sha256
+    structured_claim = result.application_claims[0]
+    assert structured_claim["checkpoint_sha256"] == checkpoint().checkpoint_sha256
+    expected_claim_digest = hashlib.sha256(
+        json.dumps(
+            structured_claim, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+        ).encode("utf-8")
+    ).hexdigest()
+    assert post["applicationClaims"] == [{
+        "kind": "ClaimDigest",
+        "protocol": "cephas.cybershield.acl-witness-claims.v2",
+        "value": expected_claim_digest,
+    }]
 
 
 def test_adapter_fails_closed_on_udf_digest_mismatch():
