@@ -234,8 +234,19 @@ def test_native_receipt_verifier_receives_pinned_identity_and_exact_claims():
     receipt, certificate_pem, claims = captured[0]
     assert receipt == result.receipt_response["receipt"]
     assert certificate_pem == "out-of-band-pinned-test-identity"
-    assert claims == result.application_claims
-    assert claims[0]["checkpoint_sha256"] == cp.checkpoint_sha256
+    structured_claim = result.application_claims[0]
+    assert structured_claim["checkpoint_sha256"] == cp.checkpoint_sha256
+    assert structured_claim["operation_id"] == cp.operation_id
+    expected_claim_digest = hashlib.sha256(
+        json.dumps(
+            structured_claim, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+        ).encode("utf-8")
+    ).hexdigest()
+    assert claims == [{
+        "kind": "ClaimDigest",
+        "protocol": "cephas.cybershield.acl-witness-claims.v2",
+        "value": expected_claim_digest,
+    }]
 
 
 def test_native_receipt_verification_failure_prevents_success_acknowledgement():

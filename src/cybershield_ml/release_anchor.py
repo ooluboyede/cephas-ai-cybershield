@@ -167,3 +167,113 @@ class AnchoredReleaseStateStore:
         self._database.accept_release(
             **scope, release_sequence=release_sequence, version=version
         )
+
+
+
+
+class WitnessedReleaseStateStore:
+    """Witness-first anti-rollback authority with forward-only mirror reconciliation."""
+
+    def __init__(self, *, witness, anchor: ReleaseFloorAnchor, database_store):
+        if witness is None or anchor is None or database_store is None:
+            raise ValueError("independent witness, HTTPS anchor and database store are required")
+        for method in ("read_checkpoint", "compare_and_append", "verify_receipt"):
+            if not callable(getattr(witness, method, None)):
+                raise TypeError(f"witness backend must implement {method}()")
+        self._witness, self._anchor, self._database = witness, anchor, database_store
+
+    @staticmethod
+    def _scope(*, tenant_id: str, deployment_id: str, product: str) -> dict:
+        if not all(isinstance(v, str) and v.strip() for v in (tenant_id, deployment_id, product)):
+            raise ValueError("tenant_id, deployment_id and product must be non-empty strings")
+        return {"tenant_id": tenant_id, "deployment_id": deployment_id, "product": product}
+
+    def _read_verified_witness(self, scope):
+        observed = self._witness.read_checkpoint(**scope)
+        if observed is None:
+            return None
+        if not isinstance(observed, tuple) or len(observed) != 2:
+            raise RuntimeError("witness returned an invalid checkpoint/receipt pair")
+        checkpoint, receipt = observed
+        from .release_witness import WitnessCheckpoint
+        if not isinstance(checkpoint, WitnessCheckpoint):
+            raise TypeError("witness returned an invalid checkpoint")
+        if (checkpoint.tenant_id, checkpoint.deployment_id, checkpoint.product) != (
+            scope["tenant_id"], scope["deployment_id"], scope["product"]
+        ):
+            raise RuntimeError("witness checkpoint scope does not match requested scope")
+        self._witness.verify_receipt(checkpoint=checkpoint, receipt=receipt)
+        return checkpoint, receipt
+
+    def _reconcile_mirrors(self, scope, checkpoint):
+        floor = (checkpoint.release_sequence, checkpoint.release_version)
+        anchor_floor = self._anchor.read_floor(**scope)
+        database_floor = self._database.get_release(**scope)
+        for label, current in (("HTTPS anchor", anchor_floor), ("database", database_floor)):
+            if current is not None:
+                if not isinstance(current, tuple) or len(current) != 2:
+                    raise RuntimeError(f"{label} returned an invalid release floor")
+                if current[0] > floor[0]:
+                    raise RuntimeError(f"{label} is ahead of independent witness; failing closed")
+                if current[0] == floor[0] and current[1] != floor[1]:
+                    raise RuntimeError(f"{label} conflicts with independent witness; failing closed")
+        if anchor_floor != floor:
+            self._anchor.advance_floor(**scope, release_sequence=floor[0], version=floor[1])
+        if database_floor != floor:
+            self._database.accept_release(**scope, release_sequence=floor[0], version=floor[1])
+
+    def accept_release(
+        self, *, tenant_id: str, deployment_id: str, product: str,
+        release_sequence: int, version: str, metadata_sha256: str,
+        artifact_sha256: str, publisher_key_id: str,
+        publisher_signature_sha256: str, operation_id: str,
+    ) -> None:
+        from .release_witness import WitnessCheckpoint
+        scope = self._scope(tenant_id=tenant_id, deployment_id=deployment_id, product=product)
+        if isinstance(release_sequence, bool) or not isinstance(release_sequence, int) or release_sequence < 1:
+            raise ValueError("release_sequence must be a positive integer")
+        if not isinstance(version, str) or not version.strip():
+            raise ValueError("version must be a non-empty string")
+        current = self._read_verified_witness(scope)
+        anchor_floor, database_floor = self._anchor.read_floor(**scope), self._database.get_release(**scope)
+        if current is None:
+            if anchor_floor is not None or database_floor is not None:
+                raise RuntimeError("release mirror exists but independent witness is unprovisioned")
+            if release_sequence != 1:
+                raise RuntimeError("first witnessed release must be sequence 1")
+            previous_digest = None
+        else:
+            current_checkpoint, _ = current
+            self._reconcile_mirrors(scope, current_checkpoint)
+            if release_sequence == current_checkpoint.release_sequence:
+                if version != current_checkpoint.release_version:
+                    raise RuntimeError("release sequence conflicts with independent witness")
+                if (
+                    metadata_sha256 != current_checkpoint.metadata_sha256
+                    or artifact_sha256 != current_checkpoint.artifact_sha256
+                    or publisher_key_id != current_checkpoint.publisher_key_id
+                    or publisher_signature_sha256 != current_checkpoint.publisher_signature_sha256
+                ):
+                    raise RuntimeError("same release sequence has different witnessed content")
+                return
+            if release_sequence != current_checkpoint.release_sequence + 1:
+                raise RuntimeError("release sequence must advance exactly one beyond witness")
+            previous_digest = current_checkpoint.checkpoint_sha256
+
+        candidate = WitnessCheckpoint(
+            tenant_id=tenant_id, deployment_id=deployment_id, product=product,
+            release_sequence=release_sequence, release_version=version,
+            metadata_sha256=metadata_sha256, artifact_sha256=artifact_sha256,
+            publisher_key_id=publisher_key_id,
+            publisher_signature_sha256=publisher_signature_sha256,
+            previous_checkpoint_sha256=previous_digest, operation_id=operation_id,
+        )
+        receipt = self._witness.compare_and_append(
+            expected_previous_checkpoint_sha256=previous_digest, checkpoint=candidate
+        )
+        self._witness.verify_receipt(checkpoint=candidate, receipt=receipt)
+        observed = self._read_verified_witness(scope)
+        if observed is None or observed[0].checkpoint_sha256 != candidate.checkpoint_sha256:
+            raise RuntimeError("independent witness did not retain the appended checkpoint")
+        self._anchor.advance_floor(**scope, release_sequence=release_sequence, version=version)
+        self._database.accept_release(**scope, release_sequence=release_sequence, version=version)

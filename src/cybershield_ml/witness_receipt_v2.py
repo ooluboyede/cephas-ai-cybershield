@@ -210,6 +210,16 @@ class WitnessReceiptEnvelopeV2:
             or not leaf.get("claimsDigest")
         ):
             raise ValueError("receipt is missing writeSetDigest or claimsDigest")
+        commit_evidence = leaf.get("commitEvidence")
+        if not isinstance(commit_evidence, str) or not commit_evidence.startswith("ce:"):
+            raise ValueError("receipt commitEvidence is missing or malformed")
+        evidence_transaction_id, separator, evidence_digest = commit_evidence[3:].partition(":")
+        if (
+            not separator or evidence_transaction_id != self.transaction_id
+            or not evidence_digest
+            or any(character not in "0123456789abcdef" for character in evidence_digest)
+        ):
+            raise ValueError("receipt commitEvidence transaction ID does not match envelope")
         if native_receipt_verifier is None:
             try:
                 from azure.confidentialledger.receipt import verify_receipt
@@ -218,20 +228,23 @@ class WitnessReceiptEnvelopeV2:
                     "install azure-confidentialledger for native offline receipt verification"
                 ) from exc
             native_receipt_verifier = verify_receipt
-        # Microsoft SDK verifies the CCF Merkle proof, service endorsement chain,
-        # write-set digest and the supplied application-claims digest.
+        # Envelope metadata is not itself a CCF applicationClaims entry.
+        # Hash the canonical metadata and pass the typed ClaimDigest wrapper to ACL.
+        structured_claim = self.application_claims[0]
+        native_claims = [{
+            "kind": "ClaimDigest",
+            "protocol": "cephas.cybershield.acl-witness-claims.v2",
+            "value": hashlib.sha256(canonical_json(structured_claim)).hexdigest(),
+        }]
         if service_identity_trust_bundle is not None:
             service_identity_trust_bundle.verify_native_receipt(
-                self.receipt,
-                self.application_claims,
-                native_receipt_verifier,
+                self.receipt, native_claims, native_receipt_verifier,
                 pinned_trust_bundle_signer_public_key_b64,
             )
         else:
             native_receipt_verifier(
-                self.receipt,
-                pinned_service_identity_certificate_pem,
-                application_claims=self.application_claims,
+                self.receipt, pinned_service_identity_certificate_pem,
+                application_claims=native_claims,
             )
         return checkpoint
 

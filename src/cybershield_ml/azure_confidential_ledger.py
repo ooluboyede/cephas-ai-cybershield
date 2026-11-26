@@ -136,9 +136,10 @@ class ACLAppendResult:
     application_claims: list[dict]
 
 
-def _canonical_checkpoint_claim(checkpoint: WitnessCheckpoint) -> dict:
+def _canonical_checkpoint_claim(checkpoint: WitnessCheckpoint) -> tuple[dict, dict]:
+    """Build CEPHAS claim metadata and the CCF-native ClaimDigest entry."""
     canonical = checkpoint.canonical_bytes()
-    return {
+    structured_claim = {
         "schema": "cephas.cybershield.acl-witness-claims.v2",
         "checkpoint_sha256": hashlib.sha256(canonical).hexdigest(),
         "checkpoint_canonical_utf8": canonical.decode("utf-8"),
@@ -149,6 +150,15 @@ def _canonical_checkpoint_claim(checkpoint: WitnessCheckpoint) -> dict:
         "udf_id": DEFAULT_UDF_ID,
         "contract_version": "0.3.5",
     }
+    claim_bytes = json.dumps(
+        structured_claim, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+    ).encode("utf-8")
+    acl_claim_entry = {
+        "kind": "ClaimDigest",
+        "protocol": "cephas.cybershield.acl-witness-claims.v2",
+        "value": hashlib.sha256(claim_bytes).hexdigest(),
+    }
+    return structured_claim, acl_claim_entry
 
 
 class AzureConfidentialLedgerAdapter:
@@ -332,10 +342,14 @@ class AzureConfidentialLedgerAdapter:
     ) -> ACLAppendResult:
         if expected_previous_checkpoint_sha256 != checkpoint.previous_checkpoint_sha256:
             raise ValueError("expected predecessor must equal the checkpoint predecessor")
-        claim = _canonical_checkpoint_claim(checkpoint)
-        claim["udf_id"] = self._udf_id
-        claim["udf_sha256"] = self._udf_sha256
-        claim["contract_version"] = "0.3.5"
+        structured_claim, acl_claim_entry = _canonical_checkpoint_claim(checkpoint)
+        structured_claim["udf_id"] = self._udf_id
+        structured_claim["udf_sha256"] = self._udf_sha256
+        structured_claim["contract_version"] = "0.3.5"
+        claim_bytes = json.dumps(
+            structured_claim, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+        ).encode("utf-8")
+        acl_claim_entry["value"] = hashlib.sha256(claim_bytes).hexdigest()
         contents = {
             "record_type": "cephas-release-witness-checkpoint-v2",
             "checkpoint": checkpoint.as_dict(),
@@ -349,7 +363,7 @@ class AzureConfidentialLedgerAdapter:
         write_body = {
             "contents": json.dumps(contents, sort_keys=True, separators=(",", ":")),
             "preHooks": [{"functionId": self._udf_id}],
-            "applicationClaims": [claim],
+            "applicationClaims": [acl_claim_entry],
         }
         try:
             response = self._transport.request_json(
@@ -382,13 +396,13 @@ class AzureConfidentialLedgerAdapter:
         self.verify_native_receipt(
             receipt,
             service_identity_certificate_pem=self._service_cert,
-            application_claims=[claim],
+            application_claims=[acl_claim_entry],
             native_receipt_verifier=self._native_receipt_verifier,
         )
         return ACLAppendResult(
             transaction_id=transaction_id,
             receipt_response=receipt,
-            application_claims=[claim],
+            application_claims=[structured_claim],
         )
 
     @staticmethod
